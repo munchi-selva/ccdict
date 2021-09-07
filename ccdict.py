@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-# Converts CC-CEDICT/CC-Canto dictionary data to an SQL format
+# Converts CC-CEDICT/CC-Canto dictionary data to an SQL format so it can be
+# easily queried.
 # The CC-CEDICT format is defined at https://CC-CEDICT.org/wiki/format:syntax.
 # CC-Canto, per https://cantonese.org/about.html, builds on CC-CEDICT by:
 #   1. Providing Jyutping renderings of CC-CEDICT entries whose definitions are
@@ -10,11 +11,8 @@
 #   2. Providing a separate listing of specifically Cantonese terms
 # The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
 ################################################################################
-from enum import IntEnum    # Backported to python 2.7 by https://pypi.org/project/enum34
 import re
 import sqlite3
-
-
 
 ###############################################################################
 # Constants
@@ -29,25 +27,14 @@ CCCANTO_FILE        = "cccanto-webdist.txt"
 CCCEDICT_CANTO_FILE = "cccedict-canto-readings-150923.txt"
 
 ###############################################################################
-# Enum for CC-Canto dictionary entry fields
+# Dictionary entry field names, used as SQL table column names, etc.
 ###############################################################################
-CCCantoFld  = IntEnum('CCCantoFld', 'CCF_TRAD   \
-                                     CCF_SIMP   \
-                                     CCF_PINYIN \
-                                     CCF_JYUPTING   \
-                                     CCF_ENGLISH    \
-                                     CCF_COMMENT',
-
-                                     start = 0)
-###############################################################################
-
 DE_TRAD     = "traditional"
 DE_SIMP     = "simplified"
 DE_PINYIN   = "pinyin"
 DE_JYUTPING = "jyutping"
 DE_ENGLISH  = "english"
 DE_COMMENT  = "comment"
-
 
 #
 # CC-CEDICT format:
@@ -79,23 +66,6 @@ DICT_PATT       = "{}\s+{}\s+{}\s+{}?\s*{}?\s*{}?".format(TRAD_PATT,
 ###############################################################################
 # sqlite helper functions
 ###############################################################################
-def dict_factory(cursor, row):
-    # type (Cursor, Tuple) -> Dict
-    """
-    Formats a row returned from an sqlite query as a dictionary, mapping column
-    names to values.
-    (See https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
-
-    :param  cursor: An sqlite Cursor
-    :param  row:    A tuple included in the cursor's set of rows
-    :returns a dictionary representation of the row
-    """
-    d = {}
-    for idx, col in enumerate(cursor.description):
-        d[col[0]] = row[idx]
-    return d
-###############################################################################
-
 
 ###############################################################################
 def regexp(pattern, field):
@@ -186,7 +156,6 @@ def lookup_dict(search_term):
     # Build a query that aggregates definitions for the search term
     # corresponding to the same Jyutping value
     #
-    #sqlcon.row_factory = dict_factory
     canto_query = "SELECT traditional AS traditional, jyutping AS jyutping, pinyin AS pinyin, group_concat(english, '/') AS defns\
                    FROM cc_canto \
                    WHERE traditional REGEXP ? \
@@ -285,6 +254,3 @@ if __name__ == "__main__":
     main()
     create_dict()
     lookup_dict("五.*")
-    
-#canto_query = "SELECT jyutping AS jyutping, pinyin AS pinyin, group_concat(english, '/') AS defns FROM cc_canto WHERE traditional REGEX ?  GROUP BY jyutping, pinyin"
-
