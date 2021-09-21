@@ -355,7 +355,6 @@ def show_single_search(search_term, de_field = DE_TRAD, use_re = False):
 ###############################################################################
 
 
-
 ###############################################################################
 def parse_dict_entries(dict_filename,
                        max_entries = -1):
@@ -378,7 +377,6 @@ def parse_dict_entries(dict_filename,
 
             if not is_comment(dict_line):
                 cccanto_tuples = parse_dict_line(dict_line)
-                #entries.append(cccanto_tuple)
                 entries.extend(cccanto_tuples)
                 entries_processed += 1
     return entries
@@ -407,14 +405,6 @@ def parse_dict_line(dict_line):
                 groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
                 eng,
                 groups[DE_COMMENT]) for eng in eng_defs]
-
-#       return (groups[DE_TRAD],
-#               groups[DE_SIMP],
-#               groups[DE_PINYIN].lower() if groups[DE_PINYIN] else None,
-#               groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
-#               groups[DE_ENGLISH],
-#               groups[DE_COMMENT])
-
     return None
 ###############################################################################
 
@@ -434,26 +424,27 @@ def is_comment(dict_line):
 
 
 ###############################################################################
-# Globals
+# Globals/Initialisation
 ###############################################################################
 sqlcon = sqlite3.connect(":memory:")
 sqlcon.row_factory = sqlite3.Row    # Allow use of named columns in query results
 sqlcon.create_function("REGEXP", 2, regexp)
 sqlcur = sqlcon.cursor()
+create_dict()
+###############################################################################
 
 
 ###############################################################################
 def main():
     """
     """
+    jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
+    eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
+    show_search([jyut_search_term, eng_search_term])
+    show_single_search("阮", DE_TRAD, False)
 
 ###############################################################################
 
 if __name__ == "__main__":
     main()
-    create_dict()
-    jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
-    eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
-    show_search([jyut_search_term, eng_search_term])
-    show_single_search("阮", DE_TRAD, False)
 
