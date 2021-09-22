@@ -403,7 +403,7 @@ def parse_dict_line(dict_line):
                 groups[DE_SIMP],
                 groups[DE_PINYIN].lower() if groups[DE_PINYIN] else None,
                 groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
-                eng,
+                eng.strip() if eng else None,
                 groups[DE_COMMENT]) for eng in eng_defs]
     return None
 ###############################################################################
