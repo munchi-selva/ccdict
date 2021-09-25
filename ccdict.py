@@ -108,7 +108,7 @@ def regexp(pattern, field):
     :returns True if field matches pattern.
     """
     re_pattern = re.compile(pattern)
-    return field and re_pattern.match(field) is not None
+    return field and re_pattern.search(field) is not None
 ###############################################################################
 
 
