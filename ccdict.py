@@ -67,11 +67,19 @@ DICT_PATT       = "{}\s+{}\s+{}\s+{}?\s*{}?\s*{}?".format(TRAD_PATT,
                                                           ENG_PATT,
                                                           COMMENT_PATT)
 
+
 ###############################################################################
 # A class to help with dictionary lookup
 ###############################################################################
 class DictSearchTerm(object):
     def __init__(self, search_value, search_field = DE_TRAD, use_re = False):
+        """
+        Dictionary search term constructor
+
+        :param  search_value:   The search value
+        :param  search_field:   The search field
+        :param  use_re:         If True, search using regular expressions
+        """
         self.search_value = search_value
         self.search_field = search_field
         self.use_re = use_re
@@ -89,320 +97,322 @@ class DictSearchTerm(object):
     @property
     def search_cond(self):
         return "{} {} ?".format(self.search_field, self.search_op)
-
-###############################################################################
-# sqlite helper functions
 ###############################################################################
 
 
-###############################################################################
-def regexp(pattern, field):
-    # type (str, str) -> Bool
-    """
-    An implementation of the user function called by sqlite's REGEXP operator,
-    allowing WHERE clause conditions that perform regular expression matching
-    (See https://www.sqlite.org/lang_expr.html#regexp)
-
-    :param  pattern:    Regular expression to be matched
-    :param  field:      Field being regular expression tested
-    :returns True if field matches pattern.
-    """
-    re_pattern = re.compile(pattern)
-    return field and re_pattern.search(field) is not None
-###############################################################################
 
 
 ###############################################################################
-def table_count(table_name):
-    # type (str -> int)
-    """
-    Returns the row count for a given table
-
-    :param table_name:  The name of the table
-    :returns the number of rows in the table
-    """
-    cursor = sqlcon.cursor()
-    cursor.execute("SELECT COUNT(*) AS [{0} rows] FROM {0}".format(table_name))
-    return cursor.fetchone()[0]
+# A class representing a searchable Cantonese dictionary
 ###############################################################################
+class CantoDict(object):
+    def __init__(self,
+                 dict_db_filename  = ":memory:",
+                 dict_file_dir     = CC_DIR):
+        """
+        Cantonese dictionary constructor
+
+        :param  dict_db_filename:   sqlite3 database filename
+        :param  dict_file_dir:      Directory hosting the dictionary source
+                                    (text) files
+        """
+        self.db_filename    = dict_db_filename
+        self.dict_file_dir  = dict_file_dir
+
+        #
+        # Set up database connection objects
+        #
+        self.db_con = sqlite3.connect(dict_db_filename)
+        self.db_con.row_factory = sqlite3.Row           # Allow use of named columns in query results
+        self.db_con.create_function("REGEXP", 2, regexp)
+        self.db_cur = self.db_con.cursor()
+
+        #
+        # Load!
+        #
+        self.load_dict()
 
 
-###############################################################################
-def show_query(query,
-               as_dict = False):
-    # type (str -> None)
-    """
-    Shows the results of a given query
+    ###########################################################################
+    def load_dict(self, force_reload = False, save_changes = True):
+        """
+        Loads the dictionary data from the database file.
+        If the database is empty, or a reload is required, loads the data from
+        the dictionary text files.
 
-    :param query:   The query
-    :param as_dict: If True, displays each row returned as a dictionary
-    :returns nothing
-    """
-    if as_dict:
-        pprint([dict(row) for row in sqlcon.execute(query)])
-    else:
-        pprint([tuple(row) for row in sqlcon.execute(query)])
-###############################################################################
+        :param  force_reload:   If True, unconditionally (re)load dictionary
+                                data from text files
+        :param  save_changes:   If True, saves the results of a (re)load
+        """
+        # Copy of the cursor for convenience
+        db_cur = self.db_cur
 
+        #
+        # Check if the master dictionary table has already been created
+        #
+        count_query = "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE name = ?"
+        db_cur.execute(count_query, ("cc_canto",))
+        cc_canto_count = db_cur.fetchone()[0]
+        if cc_canto_count == 1 and not force_reload:
+            return
 
-###############################################################################
-def create_dict():
-    """
-    Create and populates the dictionary table(s)
-    """
-    print("Initialising dictionary tables")
-    for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto"]:
-        sqlcon.execute("CREATE TABLE {}({} text, \
-                                        {} text, \
-                                        {} text, \
-                                        {} text, \
-                                        {} text, \
-                                        {} text)".format(table_name,
-                                                         DE_TRAD,
-                                                         DE_SIMP,
-                                                         DE_PINYIN,
-                                                         DE_JYUTPING,
-                                                         DE_ENGLISH,
-                                                         DE_COMMENT))
+        #
+        # Clean out existing tables
+        #
+        for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto",
+                "cedict_joined", "cedict_orphans", "cedict_canto_orphans"]:
+            db_cur.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
-    #
-    # Initiate core dictionary table with "pure" Cantonese data
-    #
-    canto_tuples = parse_dict_entries("{}/{}".format(CC_DIR, CCCANTO_FILE))
-    sqlcon.executemany("INSERT INTO cc_canto VALUES(?, ?, ?, ?, ?, ?)", canto_tuples)
+        for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto"]:
+            db_cur.execute("CREATE TABLE {}({} text, \
+                                            {} text, \
+                                            {} text, \
+                                            {} text, \
+                                            {} text, \
+                                            {} text)".format(table_name,
+                                                             DE_TRAD,
+                                                             DE_SIMP,
+                                                             DE_PINYIN,
+                                                             DE_JYUTPING,
+                                                             DE_ENGLISH,
+                                                             DE_COMMENT))
 
-    #
-    # Import CC-CEDICT/-Canto data
-    #
-    cedict_tuples = parse_dict_entries("{}/{}".format(CC_DIR, CCCEDICT_FILE))
-    sqlcon.executemany("INSERT INTO cc_cedict VALUES(?, ?, ?, ?, ?, ?)",
-            cedict_tuples)
+        #
+        # Initiate core dictionary table with "pure" Cantonese data
+        #
+        canto_tuples = parse_dict_entries("{}/{}".format(self.dict_file_dir, CCCANTO_FILE))
+        db_cur.executemany("INSERT INTO cc_canto VALUES(?, ?, ?, ?, ?, ?)", canto_tuples)
 
-    cedict_canto_tuples = parse_dict_entries("{}/{}".format(CC_DIR, CCCEDICT_CANTO_FILE))
-    sqlcon.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
-        cedict_canto_tuples)
+        #
+        # Import CC-CEDICT/-Canto data
+        #
+        cedict_tuples = parse_dict_entries("{}/{}".format(self.dict_file_dir, CCCEDICT_FILE))
+        db_cur.executemany("INSERT INTO cc_cedict VALUES(?, ?, ?, ?, ?, ?)",
+                cedict_tuples)
 
-    print("Base cc_canto count: {}".format(table_count("cc_canto")))
+        cedict_canto_tuples = parse_dict_entries("{}/{}".format(self.dict_file_dir, CCCEDICT_CANTO_FILE))
+        db_cur.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
+            cedict_canto_tuples)
 
-    #
-    # Join CC-CEDICT with CC-CEDICT-Canto entries based on traditional,
-    # simplified and pinyin column values.
-    # Add these records to the core table (if they aren't already there).
-    #
-    cedict_join_query = "CREATE TABLE cedict_joined AS \
-                         SELECT c.{0}, c.{1}, c.{2}, cc.{3}, c.{4}, c.{5} \
-                         FROM   cc_cedict c JOIN cc_cedict_canto cc \
-                                ON  c.{0} = cc.{0} AND \
+        print("Base cc_canto count: {}".format(table_count(db_cur, "cc_canto")))
+
+        #
+        # Join CC-CEDICT with CC-CEDICT-Canto entries based on traditional,
+        # simplified and pinyin column values.
+        # Add these records to the core table (if they aren't already there).
+        #
+        cedict_join_query = "CREATE TABLE cedict_joined AS \
+                             SELECT c.{0}, c.{1}, c.{2}, cc.{3}, c.{4}, c.{5} \
+                             FROM   cc_cedict c JOIN cc_cedict_canto cc \
+                                    ON  c.{0} = cc.{0} AND \
+                                        c.{1} = cc.{1} AND \
+                                        c.{2} = cc.{2}".format(*DE_FIELDS)
+        db_cur.execute(cedict_join_query)
+
+        add_join_query = "INSERT INTO cc_canto \
+                          SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
+                          FROM   cedict_joined c LEFT JOIN cc_canto cc \
+                                 ON c.{0} = cc.{0} AND \
                                     c.{1} = cc.{1} AND \
-                                    c.{2} = cc.{2}".format(*DE_FIELDS)
-    sqlcon.execute(cedict_join_query)
+                                    c.{2} = cc.{2} AND \
+                                    c.{4} = cc.{4} \
+                          WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+        db_cur.execute(add_join_query)
 
-    add_join_query = "INSERT INTO cc_canto \
-                      SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                      FROM   cedict_joined c LEFT JOIN cc_canto cc \
-                             ON c.{0} = cc.{0} AND \
-                                c.{1} = cc.{1} AND \
-                                c.{2} = cc.{2} AND \
-                                c.{4} = cc.{4} \
-                      WHERE cc.{3} IS NULL".format(*DE_FIELDS)
-    sqlcon.execute(add_join_query)
+        print("After cedict join, count: {}".format(table_count(db_cur, "cc_canto")))
 
-    print("After cedict join, count: {}".format(table_count("cc_canto")))
-
-    #
-    # Identify CC-CEDICT orphans (entries with no CC-CEDICT-Canto match), and
-    # add them to the core table
-    #
-    cedict_orphans_query = "CREATE TABLE cedict_orphans AS \
-                            SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                            FROM   cc_cedict c LEFT JOIN cc_cedict_canto cc \
-                            ON     c.{0} = cc.{0} AND \
-                                   c.{1} = cc.{1} AND \
-                                   c.{2} = cc.{2} \
-                            WHERE  cc.{4} IS NULL".format(*DE_FIELDS)
-    sqlcon.execute(cedict_orphans_query)
-
-    add_cedict_orphans_query = "INSERT INTO cc_canto \
+        #
+        # Identify CC-CEDICT orphans (entries with no CC-CEDICT-Canto match), and
+        # add them to the core table
+        #
+        cedict_orphans_query = "CREATE TABLE cedict_orphans AS \
                                 SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                                FROM   cedict_orphans c LEFT JOIN cc_canto cc \
-                                       ON c.{0} = cc.{0} AND \
-                                          c.{1} = cc.{1} AND \
-                                          c.{2} = cc.{2} AND \
-                                          c.{4} = cc.{4} \
-                                WHERE cc.{3} IS NULL".format(*DE_FIELDS)
-    sqlcon.execute(add_cedict_orphans_query)
+                                FROM   cc_cedict c LEFT JOIN cc_cedict_canto cc \
+                                ON     c.{0} = cc.{0} AND \
+                                       c.{1} = cc.{1} AND \
+                                       c.{2} = cc.{2} \
+                                WHERE  cc.{4} IS NULL".format(*DE_FIELDS)
+        db_cur.execute(cedict_orphans_query)
 
-    print("After adding cedict orphans, count: {}".format(table_count("cc_canto")))
+        add_cedict_orphans_query = "INSERT INTO cc_canto \
+                                    SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
+                                    FROM   cedict_orphans c LEFT JOIN cc_canto cc \
+                                           ON c.{0} = cc.{0} AND \
+                                              c.{1} = cc.{1} AND \
+                                              c.{2} = cc.{2} AND \
+                                              c.{4} = cc.{4} \
+                                    WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+        db_cur.execute(add_cedict_orphans_query)
 
+        print("After adding cedict orphans, count: {}".format(table_count(db_cur, "cc_canto")))
+
+        #
+        # Identify CC-CEDICT-Canto orphans and add them to the core table
+        #
+        cedict_canto_orphans_query = "CREATE TABLE cedict_canto_orphans AS \
+                                      SELECT cc.{0}, cc.{1}, cc.{2}, cc.{3}, \
+                                             cc.{4}, cc.{5} \
+                                      FROM   cc_cedict_canto cc LEFT JOIN cc_cedict c \
+                                      ON     c.{0} = cc.{0} AND \
+                                             c.{1} = cc.{1} AND \
+                                             c.{2} = cc.{2} \
+                                      WHERE  c.{0} IS NULL".format(*DE_FIELDS)
+        db_cur.execute(cedict_canto_orphans_query)
+
+        add_cedict_canto_orphans_query = "INSERT INTO cc_canto \
+                                          SELECT c.{0}, c.{1}, c.{2}, c.{3}, \
+                                                 c.{4}, c.{5} \
+                                          FROM   cedict_canto_orphans c LEFT JOIN \
+                                                 cc_canto cc \
+                                                 ON c.{0} = cc.{0} AND \
+                                                    c.{1} = cc.{1} AND \
+                                                    c.{2} = cc.{2} AND \
+                                                    c.{4} = cc.{4} \
+                                          WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+        db_cur.execute(add_cedict_canto_orphans_query)
+
+        print("After adding cedict canto orphans, count: {}".format(table_count(db_cur, "cc_canto")))
+
+        if save_changes:
+            self.save_dict()
+    ###########################################################################
+
+
+    ###########################################################################
+    def save_dict(self):
+        """
+        Saves the dictionary data to the nominated file.
+        """
+        self.db_con.commit()
+    ###########################################################################
+
+
+    ###########################################################################
+    def search_dict(self,
+                    search_exprs,
+                    flatten_pinyin = True):
+        # type (List[DictSearchTerm], Bool) -> List[Dict]
+        """
+        Search for dictionary entries matching a combination of search terms
+
+        :param search_expr:     List of search terms
+        :param flatten_pinyin:  If True, flatten pinyin groupings in search results
+        :returns a list of records (as dictionaries) matching the search terms
+        """
+        #
+        # Extract the WHERE clause conditions from the search terms
+        #
+        where_clause = " AND ".join([search_expr.search_cond for search_expr in search_exprs])
+        where_values = tuple([search_expr.search_value for search_expr in search_exprs])
+        #
+        # Build a two-stage query that groups records matching the search terms
+        # according to Jyutping and English definition
+        #
+        canto_query = str()
+        if flatten_pinyin:
+            canto_query = """
+                          WITH matching_defs({0}, {1}, {2}, {3})
+                          AS
+                              (SELECT {0},
+                                      json_group_array(DISTINCT({1})),
+                                      group_concat(DISTINCT({2})),
+                                      {3}
+                               FROM   cc_canto
+                               WHERE  {4}
+                               GROUP BY {0}, {3})
+                          SELECT {0}, {1},
+                                 group_concat(DISTINCT({2})) AS {2},
+                                 json_group_array({3}) AS {3}
+                          FROM   matching_defs
+                          GROUP BY {0}, {1}
+                          """
+        else:
+            canto_query = """
+                          WITH matching_defs({0}, {1}, {2}, {3})
+                          AS
+                              (SELECT {0},
+                                      json_group_array(DISTINCT({1})),
+                                      group_concat(DISTINCT({2})),
+                                      {3}
+                               FROM   cc_canto
+                               WHERE  {4}
+                               ORDER BY {2}
+                               GROUP BY {0}, {1})
+                          SELECT {0}, {1}, {2}, json_group_array({3}) AS {3}
+                          FROM   matching_defs
+                          GROUP BY {0}, {1}, {2}
+                          """
+        canto_query = canto_query.format(DE_TRAD, DE_JYUTPING,
+                                         DE_PINYIN, DE_ENGLISH,
+                                         where_clause)
+        self.db_cur.execute(canto_query, where_values)
+        return [dict(row) for row in self.db_cur.fetchall()]
+    ###########################################################################
+
+
+    ###########################################################################
+    def search(self,
+               search_term,
+               de_field         = DE_TRAD,
+               use_re           = False,
+               flatten_pinyin   = True):
+        # type (str, str, Bool) -> None
+        """
+        Search for dictionary entries matching a single search term
+
+        :param search_term:     Search term
+        :param de_field:        The dictionary entry field to search
+        :param use_re:          If True, treats search_term as a regular
+                                expression
+        :param flatten_pinyin:  If True, flatten pinyin groupings in search
+                                results
+        """
+        search_expr = DictSearchTerm(search_term, de_field, use_re)
+        return self.search_dict([search_expr])
+###############################################################################
+
+
+
+
+###############################################################################
+# Dictionary file parsing helper functions
+###############################################################################
+
+###############################################################################
+def is_comment(dict_line):
     #
-    # Identify CC-CEDICT-Canto orphans and add them to the core table
-    #
-    cedict_canto_orphans_query = "CREATE TABLE cedict_canto_orphans AS \
-                                  SELECT cc.{0}, cc.{1}, cc.{2}, cc.{3}, \
-                                         cc.{4}, cc.{5} \
-                                  FROM   cc_cedict_canto cc LEFT JOIN cc_cedict c \
-                                  ON     c.{0} = cc.{0} AND \
-                                         c.{1} = cc.{1} AND \
-                                         c.{2} = cc.{2} \
-                                  WHERE  c.{0} IS NULL".format(*DE_FIELDS)
-    sqlcon.execute(cedict_canto_orphans_query)
+    # type (str) -> bool
+    """
+    Returns True if the dictionary file line is a comment
 
-    add_cedict_canto_orphans_query = "INSERT INTO cc_canto \
-                                      SELECT c.{0}, c.{1}, c.{2}, c.{3}, \
-                                             c.{4}, c.{5} \
-                                      FROM   cedict_canto_orphans c LEFT JOIN \
-                                             cc_canto cc \
-                                             ON c.{0} = cc.{0} AND \
-                                                c.{1} = cc.{1} AND \
-                                                c.{2} = cc.{2} AND \
-                                                c.{4} = cc.{4} \
-                                      WHERE cc.{3} IS NULL".format(*DE_FIELDS)
-    sqlcon.execute(add_cedict_canto_orphans_query)
-
-    print("After adding cedict canto orphans, count: {}".format(table_count("cc_canto")))
+    :param  dict_line:  Dictionary file line
+    :returns True if dict_line is a comment
+    """
+    return re.match("#", dict_line)
 ###############################################################################
 
 
 ###############################################################################
-def search_dict(search_exprs,
-                flatten_pinyin = True):
-    # type (List[DictSearchTerm], Bool) -> List[Dict]
+def parse_dict_line(dict_line):
+    # type (str) -> Tuple
     """
-    Search for dictionary entries matching a combination of search terms
+    Parses a CC-CEDICT/CC-Canto/CC-CEDICT-Canto entry
 
-    :param search_expr:     List of search terms
-    :param flatten_pinyin:  If True, flatten pinyin groupings in search results
-    :returns a list of records (as dictionaries) matching the search terms
+    :param  dict_line:  Dictionary entry
+    :returns a mapping between dictionary entry fields and values
     """
-    #
-    # Extract the WHERE clause conditions from the search terms
-    #
-    where_clause = " AND ".join([search_expr.search_cond for search_expr in search_exprs])
-    where_values = tuple([search_expr.search_value for search_expr in search_exprs])
-    #
-    # Build a two-stage query that groups records matching the search terms
-    # according to Jyutping and English definition
-    #
-    canto_query = str()
-    if flatten_pinyin:
-        canto_query = """
-                      WITH matching_defs({0}, {1}, {2}, {3})
-                      AS
-                          (SELECT {0},
-                                  json_group_array(DISTINCT({1})),
-                                  group_concat(DISTINCT({2})),
-                                  {3}
-                           FROM   cc_canto
-                           WHERE  {4}
-                           GROUP BY {0}, {3})
-                      SELECT {0}, {1},
-                             group_concat(DISTINCT({2})) AS {2},
-                             json_group_array({3}) AS {3}
-                      FROM   matching_defs
-                      GROUP BY {0}, {1}
-                      """
-    else:
-        canto_query = """
-                      WITH matching_defs({0}, {1}, {2}, {3})
-                      AS
-                          (SELECT {0},
-                                  json_group_array(DISTINCT({1})),
-                                  group_concat(DISTINCT({2})),
-                                  {3}
-                           FROM   cc_canto
-                           WHERE  {4}
-                           ORDER BY {2}
-                           GROUP BY {0}, {1})
-                      SELECT {0}, {1}, {2}, json_group_array({3}) AS {3}
-                      FROM   matching_defs
-                      GROUP BY {0}, {1}, {2}
-                      """
-    canto_query = canto_query.format(DE_TRAD, DE_JYUTPING,
-                                     DE_PINYIN, DE_ENGLISH,
-                                     where_clause)
-    sqlcur.execute(canto_query, where_values)
-    return [dict(row) for row in sqlcur.fetchall()]
-################################################################################
+    m = re.match(DICT_PATT, dict_line)
+    if m:
+        groups = m.groupdict()
+        eng_defs = groups[DE_ENGLISH].split("/") if groups[DE_ENGLISH] else [None]
 
-
-###############################################################################
-def search(search_term,
-           de_field         = DE_TRAD,
-           use_re           = False,
-           flatten_pinyin   = True):
-    # type (str, str, Bool) -> None
-    """
-    Search for dictionary entries matching a single search term
-
-    :param search_term:     Search term
-    :param de_field:        The dictionary entry field to search
-    :param use_re:          If True, treats search_term as a regular expression
-    :param flatten_pinyin:  If True, flatten pinyin groupings in search results
-    """
-    search_expr = DictSearchTerm(search_term, de_field, use_re)
-    return search_dict([search_expr])
-################################################################################
-
-
-###############################################################################
-def show_search_result(search_result):
-    # type (Dict) -> None
-    """
-    Displays a dictionary search result
-
-    :param search_result: List of search results
-    :returns nothing
-    """
-    decoder = json.JSONDecoder()
-
-    jyutlist = decoder.decode(search_result[DE_JYUTPING])
-    jyutstring = ";".join(filter(None, jyutlist))
-
-    # Queries may generate duplicate Pinyin results (although I've yet to see
-    # this happen)... use a sledgehammer to get rid of them
-    pinlist = list(set(search_result[DE_PINYIN].split(",")))
-    pinstring = ";".join(filter(None, pinlist))
-
-    englist = decoder.decode(search_result[DE_ENGLISH])
-    print("{}\n\t[{}] ({})".format(search_result[DE_TRAD], jyutstring, pinstring))
-    if englist:
-        for eng in englist:
-            print("\t{}".format(eng))
-###############################################################################
-
-
-###############################################################################
-def show_search(search_exprs):
-    # type (List[DictSearchTerm]) -> None
-    """
-    Shows dictionary entries matching a combination of search terms
-
-    :param search_expr: List of search terms
-    :returns nothing
-    """
-    search_results = search_dict(search_exprs)
-    for search_result in search_results:
-        show_search_result(search_result)
-###############################################################################
-
-
-###############################################################################
-def show_single_search(search_term,
-                       de_field         = DE_TRAD,
-                       use_re           = False,
-                       flatten_pinyin   = True):
-    # type (str, str, Bool, Bool) -> None
-    """
-    Show dictionary entries matching a single search term
-
-    :param search_term:     Search term
-    :param de_field:        The dictionary entry field to search
-    :param use_re:          If True, treats search_term as a regular expression
-    :param flatten_pinyin:  If True, flatten pinyin groupings in search results
-    """
-    search_results = search(search_term, de_field, use_re, flatten_pinyin)
-    for search_result in search_results:
-        show_search_result(search_result)
+        return [(groups[DE_TRAD],
+                groups[DE_SIMP],
+                groups[DE_PINYIN].lower() if groups[DE_PINYIN] else None,
+                groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
+                eng.strip() if eng else None,
+                groups[DE_COMMENT]) for eng in eng_defs]
+    return None
 ###############################################################################
 
 
@@ -434,65 +444,146 @@ def parse_dict_entries(dict_filename,
 ###############################################################################
 
 
+
+
 ###############################################################################
-def parse_dict_line(dict_line):
-    # type (str) -> Tuple
+# General sqlite helper functions
+###############################################################################
+
+###############################################################################
+def regexp(pattern, field):
+    # type (str, str) -> Bool
     """
-    Parses a CC-CEDICT/CC-Canto/CC-CEDICT-Canto entry
+    An implementation of the user function called by sqlite's REGEXP operator,
+    allowing WHERE clause conditions that perform regular expression matching
+    (See https://www.sqlite.org/lang_expr.html#regexp)
 
-    :param  dict_line:  Dictionary entry
-    :returns a mapping between dictionary entry fields and values
+    :param  pattern:    Regular expression to be matched
+    :param  field:      Field being regular expression tested
+    :returns True if field matches pattern.
     """
-    #dict_line_patt = "([^\s]+)\s+([^\s]+)\s+\[([^]]*)\]\s+({([^}]+)})?\s*(/(.*)/)?\s*(#\s+(.*$))?"
-
-    m = re.match(DICT_PATT, dict_line)
-    if m:
-        groups = m.groupdict()
-        eng_defs = groups[DE_ENGLISH].split("/") if groups[DE_ENGLISH] else [None]
-
-        return [(groups[DE_TRAD],
-                groups[DE_SIMP],
-                groups[DE_PINYIN].lower() if groups[DE_PINYIN] else None,
-                groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
-                eng.strip() if eng else None,
-                groups[DE_COMMENT]) for eng in eng_defs]
-    return None
+    re_pattern = re.compile(pattern)
+    return field and re_pattern.search(field) is not None
 ###############################################################################
 
 
 ###############################################################################
-def is_comment(dict_line):
-    #
-    # type (str) -> bool
+def table_count(sqlcur, table_name):
+    # type (Cursor, str -> int)
     """
-    Returns True if the dictionary file line is a comment
+    Returns the row count for a given table
 
-    :param  dict_line:  Dictionary file line
-    :returns True if dict_line is a comment
+    :param  sqlcur:     Cursor instance for running queries
+    :param  table_name: Name of the table
+    :returns the number of rows in the table
     """
-    return re.match("#", dict_line)
+    sqlcur.execute("SELECT COUNT(*) AS [{0} rows] FROM {0}".format(table_name))
+    return sqlcur.fetchone()[0]
 ###############################################################################
 
 
 ###############################################################################
-# Globals/Initialisation
+def show_query(sqlcur,
+               query,
+               as_dict = False):
+    # type (str -> None)
+    """
+    Shows the results of a given query
+
+    :param  sqlcur: Cursor instance for running queries
+    :param  query:  The query
+    :param as_dict: If True, displays each row returned as a dictionary
+    :returns nothing
+    """
+    if as_dict:
+        pprint([dict(row) for row in sqlcur.execute(query)])
+    else:
+        pprint([tuple(row) for row in sqlcur.execute(query)])
 ###############################################################################
-sqlcon = sqlite3.connect(":memory:")
-sqlcon.row_factory = sqlite3.Row    # Allow use of named columns in query results
-sqlcon.create_function("REGEXP", 2, regexp)
-sqlcur = sqlcon.cursor()
-create_dict()
+
+
+
+
 ###############################################################################
+# Helper functions for processing/displaying dictionary search results
+###############################################################################
+
+###############################################################################
+def show_search_result(search_result):
+    # type (Dict) -> None
+    """
+    Displays a dictionary search result
+
+    :param search_result: List of search results
+    :returns nothing
+    """
+    decoder = json.JSONDecoder()
+
+    jyutlist = decoder.decode(search_result[DE_JYUTPING])
+    jyutstring = ";".join(filter(None, jyutlist))
+
+    # Queries may generate duplicate Pinyin results (although I've yet to see
+    # this happen)... use a sledgehammer to get rid of them
+    pinlist = list(set(search_result[DE_PINYIN].split(",")))
+    pinstring = ";".join(filter(None, pinlist))
+
+    englist = decoder.decode(search_result[DE_ENGLISH])
+    print("{}\n\t[{}] ({})".format(search_result[DE_TRAD], jyutstring, pinstring))
+    if englist:
+        for eng in englist:
+            print("\t{}".format(eng))
+###############################################################################
+
+
+###############################################################################
+def show_search(canto_dict, search_exprs):
+    # type (List[DictSearchTerm]) -> None
+    """
+    Shows dictionary entries matching a combination of search terms
+
+    :param canto_dict:  A Cantonese dictionary instance
+    :param search_expr: List of search terms
+    :returns nothing
+    """
+    search_results = canto_dict.search_dict(search_exprs)
+    for search_result in search_results:
+        show_search_result(search_result)
+###############################################################################
+
+
+###############################################################################
+def show_single_search(canto_dict,
+                       search_term,
+                       de_field         = DE_TRAD,
+                       use_re           = False,
+                       flatten_pinyin   = True):
+    # type (str, str, Bool, Bool) -> None
+    """
+    Show dictionary entries matching a single search term
+
+    :param canto_dict       A Cantonese dictionary instance
+    :param search_term:     Search term
+    :param de_field:        The dictionary entry field to search
+    :param use_re:          If True, treats search_term as a regular expression
+    :param flatten_pinyin:  If True, flatten pinyin groupings in search results
+    """
+    search_results = canto_dict.search(search_term, de_field, use_re, flatten_pinyin)
+    for search_result in search_results:
+        show_search_result(search_result)
+###############################################################################
+
+
 
 
 ###############################################################################
 def main():
     """
     """
+    canto_dict = CantoDict("ccdict.db")
     jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
     eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
-    show_search([jyut_search_term, eng_search_term])
-    show_single_search("阮", DE_TRAD, False)
+    show_search(canto_dict, [jyut_search_term, eng_search_term])
+    show_single_search(canto_dict, "阮", DE_TRAD, False)
 
 ###############################################################################
 
