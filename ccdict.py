@@ -38,6 +38,7 @@ DE_JYUTPING = "jyutping"
 DE_ENGLISH  = "english"
 DE_COMMENT  = "comment"
 
+
 DE_FIELDS   = [DE_TRAD, DE_SIMP, DE_PINYIN, DE_JYUTPING, DE_ENGLISH, DE_COMMENT]
 
 #
@@ -289,7 +290,7 @@ class CantoDict(object):
 
     ###########################################################################
     def search_dict(self,
-                    search_exprs,
+                    search_terms,
                     flatten_pinyin = True):
         # type (List[DictSearchTerm], Bool) -> List[Dict]
         """
@@ -302,8 +303,8 @@ class CantoDict(object):
         #
         # Extract the WHERE clause conditions from the search terms
         #
-        where_clause = " AND ".join([search_expr.search_cond for search_expr in search_exprs])
-        where_values = tuple([search_expr.search_value for search_expr in search_exprs])
+        where_clause = " AND ".join([search_expr.search_cond for search_expr in search_terms])
+        where_values = tuple([search_expr.search_value for search_expr in search_terms])
         #
         # Build a two-stage query that groups records matching the search terms
         # according to Jyutping and English definition
@@ -369,8 +370,58 @@ class CantoDict(object):
         """
         search_expr = DictSearchTerm(search_term, de_field, use_re)
         return self.search_dict([search_expr])
-###############################################################################
+    ###########################################################################
 
+
+    ###########################################################################
+    def show_search(self, search_expr, **kwargs):
+        # type (str/List[DictSearchTerm]) -> None
+        """
+        Shows dictionary entries matching a search expression, which can be a
+        single search string or a list of dictionary search terms
+
+        :param search_expr: A search string or list of search terms
+        :optional/keyword arguments
+            search_field:   In single search mode, the search field to use
+            use_re:         If True, treat the single search term as a regular
+                            expression
+            flatten_pinyin: If True, flatten pinyin groupings in search results
+            indent_str:     An indent string that prefixes each line of the
+                            formatted search result
+            compact:        If True, compact the search result to a single line
+            fields:         The fields to include in the string
+        :returns nothing
+        """
+        if isinstance(search_expr, str):
+            search_field    = kwargs.get("search_field", DE_TRAD)
+            use_re          = kwargs.get("use_re", False)
+            search_expr     = [DictSearchTerm(search_expr, search_field, use_re)]
+        search_results = self.search_dict(search_expr)
+        for search_result in search_results:
+            print(format_search_result(search_result, **kwargs))
+    ###########################################################################
+
+
+    ###########################################################################
+#    def show_single_search(self,
+#                           search_term,
+#                           **kwargs):
+#        # type (str, str, Bool, Bool) -> None
+#        """
+#        Show dictionary entries matching a single search term
+#
+#        :param canto_dict       A Cantonese dictionary instance
+#        :param search_term:     Search term
+#        :optional/keyword arguments
+#            de_field:       The dictionary entry field to search
+#            use_re:         If True, treats search_term as a regular expression
+#            flatten_pinyin: If True, flatten pinyin groupings in search results
+#        """
+#        de_field        = kwargs.get("de_field",        DE_TRAD)
+#        use_re          = kwargs.get("use_re",          False)
+#        self.show_search([DictSearchTerm(search_term, de_field, use_re)], **kwargs)
+################################################################################
+#
 
 
 
@@ -509,69 +560,60 @@ def show_query(sqlcur,
 ###############################################################################
 
 ###############################################################################
-def show_search_result(search_result):
+def format_search_result(search_result,
+                         **kwargs):
     # type (Dict) -> None
     """
-    Displays a dictionary search result
+    Returns a dictionary search result as a formatted string.
 
-    :param search_result: List of search results
-    :returns nothing
+    :param  search_result:  A dictionary search result
+    :optional/keyword arguments
+        indent_str: An indent string that prefixes each line of the formatted
+                    search result
+        compact:    If True, compact the search result to a single line
+        fields:     The fields to include in the string
+
+    :returns the search result as a string
     """
+
+    #
+    # Retrieve settings, or initialise them to defaults
+    #
+    indent_str  = kwargs.get("indent_str",  "")
+    compact     = kwargs.get("compact",     False)
+    fields      = kwargs.get("fields",      [DE_TRAD, DE_JYUTPING, DE_ENGLISH])
+
+    result_strings = list()
     decoder = json.JSONDecoder()
 
-    jyutlist = decoder.decode(search_result[DE_JYUTPING])
-    jyutstring = ";".join(filter(None, jyutlist))
+    for field in fields:
+        if field in [DE_TRAD, DE_SIMP, DE_COMMENT]:
+            result_strings.append(search_result.get(field, ""))
+        elif field == DE_JYUTPING:
+            jyutlist = decoder.decode(search_result[DE_JYUTPING])
+            jyutstring = "[{}]".format(";".join(filter(None, jyutlist)))
+            if DE_PINYIN in fields:
+                # Queries may generate duplicate Pinyin results (although I've yet to see
+                # this happen)... use a sledgehammer to get rid of them
+                pinlist = list(set(search_result[DE_PINYIN].split(",")))
+                pinstring = "({})".format(";".join(filter(None, pinlist)))
+                jyutstring = "{} {}".format(jyutstring, pinstring)
+            if not compact:
+                jyutstring = "\t{}".format(jyutstring)
+            result_strings.append(jyutstring)
+        elif field == DE_ENGLISH:
+            englist = decoder.decode(search_result[DE_ENGLISH])
+            if englist:
+                if compact:
+                    engsep = "; "
+                    engstring = engsep.join(englist)
+                    result_strings.append(engstring)
+                else:
+                    result_strings.extend(["\t{}".format(eng) for eng in englist])
 
-    # Queries may generate duplicate Pinyin results (although I've yet to see
-    # this happen)... use a sledgehammer to get rid of them
-    pinlist = list(set(search_result[DE_PINYIN].split(",")))
-    pinstring = ";".join(filter(None, pinlist))
-
-    englist = decoder.decode(search_result[DE_ENGLISH])
-    print("{}\n\t[{}] ({})".format(search_result[DE_TRAD], jyutstring, pinstring))
-    if englist:
-        for eng in englist:
-            print("\t{}".format(eng))
+    string_sep = " " if compact else "\n{}".format(indent_str)
+    return "{}{}".format(indent_str, string_sep.join(result_strings))
 ###############################################################################
-
-
-###############################################################################
-def show_search(canto_dict, search_exprs):
-    # type (List[DictSearchTerm]) -> None
-    """
-    Shows dictionary entries matching a combination of search terms
-
-    :param canto_dict:  A Cantonese dictionary instance
-    :param search_expr: List of search terms
-    :returns nothing
-    """
-    search_results = canto_dict.search_dict(search_exprs)
-    for search_result in search_results:
-        show_search_result(search_result)
-###############################################################################
-
-
-###############################################################################
-def show_single_search(canto_dict,
-                       search_term,
-                       de_field         = DE_TRAD,
-                       use_re           = False,
-                       flatten_pinyin   = True):
-    # type (str, str, Bool, Bool) -> None
-    """
-    Show dictionary entries matching a single search term
-
-    :param canto_dict       A Cantonese dictionary instance
-    :param search_term:     Search term
-    :param de_field:        The dictionary entry field to search
-    :param use_re:          If True, treats search_term as a regular expression
-    :param flatten_pinyin:  If True, flatten pinyin groupings in search results
-    """
-    search_results = canto_dict.search(search_term, de_field, use_re, flatten_pinyin)
-    for search_result in search_results:
-        show_search_result(search_result)
-###############################################################################
-
 
 
 
@@ -579,13 +621,14 @@ def show_single_search(canto_dict,
 def main():
     """
     """
-    canto_dict = CantoDict("ccdict.db")
     jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
     eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
-    show_search(canto_dict, [jyut_search_term, eng_search_term])
-    show_single_search(canto_dict, "阮", DE_TRAD, False)
+    canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t\t")
+    canto_dict.show_search("阮", fields = DE_FIELDS, flatten_pinyin = False,
+            indent_str = "!!!!")
 
 ###############################################################################
 
 if __name__ == "__main__":
+    canto_dict = CantoDict("ccdict.db")
     main()
