@@ -85,6 +85,12 @@ class DictSearchTerm(object):
         self.search_field = search_field
         self.use_re = use_re
 
+    def __str__(self):
+        """
+        String representation of a dictionary search term
+        """
+        return "DictSearchTerm({}, {}, {})".format(self.search_value, self.search_field, self.use_re)
+
     #
     # A read-only property that specifies which search operation to use
     #
@@ -290,21 +296,32 @@ class CantoDict(object):
 
     ###########################################################################
     def search_dict(self,
-                    search_terms,
-                    flatten_pinyin = True):
+                    search_expr,
+                    **kwargs):
         # type (List[DictSearchTerm], Bool) -> List[Dict]
         """
-        Search for dictionary entries matching a combination of search terms
+        Shows dictionary entries matching a search expression, which can be a
+        single search string or a list of dictionary search terms
 
-        :param search_expr:     List of search terms
-        :param flatten_pinyin:  If True, flatten pinyin groupings in search results
+        :param  search_expr:    A search string or list of search terms
+        :optional/keyword arguments
+            search_field:   In single search mode, the search field to use
+            use_re:         If True, treat the single search term as a regular
+                            expression
+            flatten_pinyin: If True, flatten pinyin groupings in search results
         :returns a list of records (as dictionaries) matching the search terms
         """
+        flatten_pinyin = kwargs.get("flatten_pinyin", True)
+        if isinstance(search_expr, str):
+            search_field    = kwargs.get("search_field", DE_TRAD)
+            use_re          = kwargs.get("use_re", False)
+            search_expr     = [DictSearchTerm(search_expr, search_field, use_re)]
+
         #
         # Extract the WHERE clause conditions from the search terms
         #
-        where_clause = " AND ".join([search_expr.search_cond for search_expr in search_terms])
-        where_values = tuple([search_expr.search_value for search_expr in search_terms])
+        where_clause = " AND ".join([search_term.search_cond for search_term in search_expr])
+        where_values = tuple([search_term.search_value for search_term in search_expr])
         #
         # Build a two-stage query that groups records matching the search terms
         # according to Jyutping and English definition
@@ -337,8 +354,8 @@ class CantoDict(object):
                                       {3}
                                FROM   cc_canto
                                WHERE  {4}
-                               ORDER BY {2}
-                               GROUP BY {0}, {1})
+                               GROUP BY {0}, {3}
+                               ORDER BY {2})
                           SELECT {0}, {1}, {2}, json_group_array({3}) AS {3}
                           FROM   matching_defs
                           GROUP BY {0}, {1}, {2}
@@ -351,27 +368,6 @@ class CantoDict(object):
     ###########################################################################
 
 
-    ###########################################################################
-    def search(self,
-               search_term,
-               de_field         = DE_TRAD,
-               use_re           = False,
-               flatten_pinyin   = True):
-        # type (str, str, Bool) -> None
-        """
-        Search for dictionary entries matching a single search term
-
-        :param search_term:     Search term
-        :param de_field:        The dictionary entry field to search
-        :param use_re:          If True, treats search_term as a regular
-                                expression
-        :param flatten_pinyin:  If True, flatten pinyin groupings in search
-                                results
-        """
-        search_expr = DictSearchTerm(search_term, de_field, use_re)
-        return self.search_dict([search_expr])
-    ###########################################################################
-
 
     ###########################################################################
     def show_search(self, search_expr, **kwargs):
@@ -380,7 +376,7 @@ class CantoDict(object):
         Shows dictionary entries matching a search expression, which can be a
         single search string or a list of dictionary search terms
 
-        :param search_expr: A search string or list of search terms
+        :param  search_expr:    A search string or list of search terms
         :optional/keyword arguments
             search_field:   In single search mode, the search field to use
             use_re:         If True, treat the single search term as a regular
@@ -392,36 +388,10 @@ class CantoDict(object):
             fields:         The fields to include in the string
         :returns nothing
         """
-        if isinstance(search_expr, str):
-            search_field    = kwargs.get("search_field", DE_TRAD)
-            use_re          = kwargs.get("use_re", False)
-            search_expr     = [DictSearchTerm(search_expr, search_field, use_re)]
-        search_results = self.search_dict(search_expr)
+        search_results = self.search_dict(search_expr, **kwargs)
         for search_result in search_results:
             print(format_search_result(search_result, **kwargs))
-    ###########################################################################
-
-
-    ###########################################################################
-#    def show_single_search(self,
-#                           search_term,
-#                           **kwargs):
-#        # type (str, str, Bool, Bool) -> None
-#        """
-#        Show dictionary entries matching a single search term
-#
-#        :param canto_dict       A Cantonese dictionary instance
-#        :param search_term:     Search term
-#        :optional/keyword arguments
-#            de_field:       The dictionary entry field to search
-#            use_re:         If True, treats search_term as a regular expression
-#            flatten_pinyin: If True, flatten pinyin groupings in search results
-#        """
-#        de_field        = kwargs.get("de_field",        DE_TRAD)
-#        use_re          = kwargs.get("use_re",          False)
-#        self.show_search([DictSearchTerm(search_term, de_field, use_re)], **kwargs)
-################################################################################
-#
+###############################################################################
 
 
 
@@ -553,8 +523,6 @@ def show_query(sqlcur,
 ###############################################################################
 
 
-
-
 ###############################################################################
 # Helper functions for processing/displaying dictionary search results
 ###############################################################################
@@ -623,9 +591,9 @@ def main():
     """
     jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
     eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
-    canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t\t")
-    canto_dict.show_search("阮", fields = DE_FIELDS, flatten_pinyin = False,
-            indent_str = "!!!!")
+    canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
+    canto_dict.show_search("樂", fields = DE_FIELDS)
+    canto_dict.show_search("樂", fields = DE_FIELDS, flatten_pinyin = False, indent_str = "!!!!")
 
 ###############################################################################
 
