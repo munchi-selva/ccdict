@@ -15,6 +15,7 @@ import json
 import re
 import sqlite3
 from pprint import pprint   # Pretty printing module
+from enum import IntEnum    # Backported to python 2.7 by https://pypi.org/project/enum34
 
 ###############################################################################
 # Constants
@@ -31,15 +32,16 @@ CCCEDICT_CANTO_FILE = "cccedict-canto-readings-150923.txt"
 ###############################################################################
 # Dictionary entry field names, used as SQL table column names, etc.
 ###############################################################################
-DE_TRAD     = "traditional"
-DE_SIMP     = "simplified"
-DE_PINYIN   = "pinyin"
-DE_JYUTPING = "jyutping"
-DE_ENGLISH  = "english"
-DE_COMMENT  = "comment"
+DE_FLD_TRAD     = "traditional"
+DE_FLD_SIMP     = "simplified"
+DE_FLD_PINYIN   = "pinyin"
+DE_FLD_JYUTPING = "jyutping"
+DE_FLD_ENGLISH  = "english"
+DE_FLD_COMMENT  = "comment"
 
 
-DE_FIELDS   = [DE_TRAD, DE_SIMP, DE_PINYIN, DE_JYUTPING, DE_ENGLISH, DE_COMMENT]
+DE_FLDS_NAMES   = [name for name in list(locals().keys()) if re.match("DE_FLD_", name)]
+DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
 
 #
 # CC-CEDICT format:
@@ -55,12 +57,12 @@ DE_FIELDS   = [DE_TRAD, DE_SIMP, DE_PINYIN, DE_JYUTPING, DE_ENGLISH, DE_COMMENT]
 # CC-CEDICT, CC-Canto and CC-CEDICT-Canto lines to be parsed, yielding all
 # fields of a complete CC-Canto entry.
 #                   TRAD       SIMP        PINYIN     JYUTPING      ENG
-TRAD_PATT       = "(?P<{}>[^\s]+)".format(DE_TRAD)
-SIMP_PATT       = "(?P<{}>[^\s]+)".format(DE_SIMP)
-PINYIN_PATT     = "\[(?P<{}>[^]]*)\]".format(DE_PINYIN)
-JYUTPING_PATT   = "({{(?P<{}>[^}}]+)}})".format(DE_JYUTPING)
-ENG_PATT        = "(/(?P<{}>.*)/)".format(DE_ENGLISH)
-COMMENT_PATT    = "(#\s+(?P<{}>.*$))".format(DE_COMMENT)
+TRAD_PATT       = "(?P<{}>[^\s]+)".format(DE_FLD_TRAD)
+SIMP_PATT       = "(?P<{}>[^\s]+)".format(DE_FLD_SIMP)
+PINYIN_PATT     = "\[(?P<{}>[^]]*)\]".format(DE_FLD_PINYIN)
+JYUTPING_PATT   = "({{(?P<{}>[^}}]+)}})".format(DE_FLD_JYUTPING)
+ENG_PATT        = "(/(?P<{}>.*)/)".format(DE_FLD_ENGLISH)
+COMMENT_PATT    = "(#\s+(?P<{}>.*$))".format(DE_FLD_COMMENT)
 DICT_PATT       = "{}\s+{}\s+{}\s+{}?\s*{}?\s*{}?".format(TRAD_PATT,
                                                           SIMP_PATT,
                                                           PINYIN_PATT,
@@ -73,7 +75,7 @@ DICT_PATT       = "{}\s+{}\s+{}\s+{}?\s*{}?\s*{}?".format(TRAD_PATT,
 # A class to help with dictionary lookup
 ###############################################################################
 class DictSearchTerm(object):
-    def __init__(self, search_value, search_field = DE_TRAD, use_re = False):
+    def __init__(self, search_value, search_field = DE_FLD_TRAD, use_re = False):
         """
         Dictionary search term constructor
 
@@ -84,25 +86,34 @@ class DictSearchTerm(object):
         self.search_value = search_value
         self.search_field = search_field
         self.use_re = use_re
+    ###########################################################################
 
+
+    ###########################################################################
     def __str__(self):
         """
         String representation of a dictionary search term
         """
         return "DictSearchTerm({}, {}, {})".format(self.search_value, self.search_field, self.use_re)
+    ###########################################################################
 
-    #
-    # A read-only property that specifies which search operation to use
-    #
+
+    ###########################################################################
     @property
     def search_op(self):
+        """
+        A read-only property that specifies which search operation to use
+        """
         return "REGEXP" if self.use_re else "="
+    ###########################################################################
 
-    #
-    # A read-only property that specifies the SQL query condition
-    #
+
+    ###########################################################################
     @property
     def search_cond(self):
+        """
+        A read-only property that specifies the SQL query condition
+        """
         return "{} {} ?".format(self.search_field, self.search_op)
 ###############################################################################
 
@@ -138,6 +149,7 @@ class CantoDict(object):
         # Load!
         #
         self.load_dict()
+    ###########################################################################
 
 
     ###########################################################################
@@ -177,12 +189,12 @@ class CantoDict(object):
                                             {} text, \
                                             {} text, \
                                             {} text)".format(table_name,
-                                                             DE_TRAD,
-                                                             DE_SIMP,
-                                                             DE_PINYIN,
-                                                             DE_JYUTPING,
-                                                             DE_ENGLISH,
-                                                             DE_COMMENT))
+                                                             DE_FLD_TRAD,
+                                                             DE_FLD_SIMP,
+                                                             DE_FLD_PINYIN,
+                                                             DE_FLD_JYUTPING,
+                                                             DE_FLD_ENGLISH,
+                                                             DE_FLD_COMMENT))
 
         #
         # Initiate core dictionary table with "pure" Cantonese data
@@ -213,7 +225,7 @@ class CantoDict(object):
                              FROM   cc_cedict c JOIN cc_cedict_canto cc \
                                     ON  c.{0} = cc.{0} AND \
                                         c.{1} = cc.{1} AND \
-                                        c.{2} = cc.{2}".format(*DE_FIELDS)
+                                        c.{2} = cc.{2}".format(*DE_FLDS)
         db_cur.execute(cedict_join_query)
 
         add_join_query = "INSERT INTO cc_canto \
@@ -223,7 +235,7 @@ class CantoDict(object):
                                     c.{1} = cc.{1} AND \
                                     c.{2} = cc.{2} AND \
                                     c.{4} = cc.{4} \
-                          WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+                          WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_join_query)
 
         print("After cedict join, count: {}".format(table_count(db_cur, "cc_canto")))
@@ -238,7 +250,7 @@ class CantoDict(object):
                                 ON     c.{0} = cc.{0} AND \
                                        c.{1} = cc.{1} AND \
                                        c.{2} = cc.{2} \
-                                WHERE  cc.{4} IS NULL".format(*DE_FIELDS)
+                                WHERE  cc.{4} IS NULL".format(*DE_FLDS)
         db_cur.execute(cedict_orphans_query)
 
         add_cedict_orphans_query = "INSERT INTO cc_canto \
@@ -248,7 +260,7 @@ class CantoDict(object):
                                               c.{1} = cc.{1} AND \
                                               c.{2} = cc.{2} AND \
                                               c.{4} = cc.{4} \
-                                    WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+                                    WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_cedict_orphans_query)
 
         print("After adding cedict orphans, count: {}".format(table_count(db_cur, "cc_canto")))
@@ -263,7 +275,7 @@ class CantoDict(object):
                                       ON     c.{0} = cc.{0} AND \
                                              c.{1} = cc.{1} AND \
                                              c.{2} = cc.{2} \
-                                      WHERE  c.{0} IS NULL".format(*DE_FIELDS)
+                                      WHERE  c.{0} IS NULL".format(*DE_FLDS)
         db_cur.execute(cedict_canto_orphans_query)
 
         add_cedict_canto_orphans_query = "INSERT INTO cc_canto \
@@ -275,7 +287,7 @@ class CantoDict(object):
                                                     c.{1} = cc.{1} AND \
                                                     c.{2} = cc.{2} AND \
                                                     c.{4} = cc.{4} \
-                                          WHERE cc.{3} IS NULL".format(*DE_FIELDS)
+                                          WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_cedict_canto_orphans_query)
 
         print("After adding cedict canto orphans, count: {}".format(table_count(db_cur, "cc_canto")))
@@ -313,9 +325,12 @@ class CantoDict(object):
         """
         flatten_pinyin = kwargs.get("flatten_pinyin", True)
         if isinstance(search_expr, str):
-            search_field    = kwargs.get("search_field", DE_TRAD)
+            search_field    = kwargs.get("search_field", DE_FLD_TRAD)
             use_re          = kwargs.get("use_re", False)
             search_expr     = [DictSearchTerm(search_expr, search_field, use_re)]
+        else:
+            for e in search_expr:
+                print(e)
 
         #
         # Extract the WHERE clause conditions from the search terms
@@ -360,13 +375,12 @@ class CantoDict(object):
                           FROM   matching_defs
                           GROUP BY {0}, {1}, {2}
                           """
-        canto_query = canto_query.format(DE_TRAD, DE_JYUTPING,
-                                         DE_PINYIN, DE_ENGLISH,
+        canto_query = canto_query.format(DE_FLD_TRAD, DE_FLD_JYUTPING,
+                                         DE_FLD_PINYIN, DE_FLD_ENGLISH,
                                          where_clause)
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
     ###########################################################################
-
 
 
     ###########################################################################
@@ -425,14 +439,14 @@ def parse_dict_line(dict_line):
     m = re.match(DICT_PATT, dict_line)
     if m:
         groups = m.groupdict()
-        eng_defs = groups[DE_ENGLISH].split("/") if groups[DE_ENGLISH] else [None]
+        eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [None]
 
-        return [(groups[DE_TRAD],
-                groups[DE_SIMP],
-                groups[DE_PINYIN].lower() if groups[DE_PINYIN] else None,
-                groups[DE_JYUTPING].lower() if groups[DE_JYUTPING] else None,
+        return [(groups[DE_FLD_TRAD],
+                groups[DE_FLD_SIMP],
+                groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
+                groups[DE_FLD_JYUTPING].lower() if groups[DE_FLD_JYUTPING] else None,
                 eng.strip() if eng else None,
-                groups[DE_COMMENT]) for eng in eng_defs]
+                groups[DE_FLD_COMMENT]) for eng in eng_defs]
     return None
 ###############################################################################
 
@@ -549,28 +563,28 @@ def format_search_result(search_result,
     #
     indent_str  = kwargs.get("indent_str",  "")
     compact     = kwargs.get("compact",     False)
-    fields      = kwargs.get("fields",      [DE_TRAD, DE_JYUTPING, DE_ENGLISH])
+    fields      = kwargs.get("fields",      [DE_FLD_TRAD, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
 
     result_strings = list()
     decoder = json.JSONDecoder()
 
     for field in fields:
-        if field in [DE_TRAD, DE_SIMP, DE_COMMENT]:
+        if field in [DE_FLD_TRAD, DE_FLD_SIMP, DE_FLD_COMMENT]:
             result_strings.append(search_result.get(field, ""))
-        elif field == DE_JYUTPING:
-            jyutlist = decoder.decode(search_result[DE_JYUTPING])
+        elif field == DE_FLD_JYUTPING:
+            jyutlist = decoder.decode(search_result[DE_FLD_JYUTPING])
             jyutstring = "[{}]".format(";".join(filter(None, jyutlist)))
-            if DE_PINYIN in fields:
+            if DE_FLD_PINYIN in fields:
                 # Queries may generate duplicate Pinyin results (although I've yet to see
                 # this happen)... use a sledgehammer to get rid of them
-                pinlist = list(set(search_result[DE_PINYIN].split(",")))
+                pinlist = list(set(search_result[DE_FLD_PINYIN].split(",")))
                 pinstring = "({})".format(";".join(filter(None, pinlist)))
                 jyutstring = "{} {}".format(jyutstring, pinstring)
             if not compact:
                 jyutstring = "\t{}".format(jyutstring)
             result_strings.append(jyutstring)
-        elif field == DE_ENGLISH:
-            englist = decoder.decode(search_result[DE_ENGLISH])
+        elif field == DE_FLD_ENGLISH:
+            englist = decoder.decode(search_result[DE_FLD_ENGLISH])
             if englist:
                 if compact:
                     engsep = "; "
@@ -584,16 +598,262 @@ def format_search_result(search_result,
 ###############################################################################
 
 
+###############################################################################
+def str_to_bool(str):
+    # type (str) -> bool
+    """
+    Converts a string to a boolean (if possible)
+
+    :param  str:    A string
+    :returns True/False/None depending on the value of the input string
+    """
+    if str.lower() == "true":
+        return True
+    elif str.lower() == "false":
+        return False
+    return None
+###############################################################################
+
+
+###############################################################################
+# Shell command types enum
+###############################################################################
+CmdTknType = IntEnum("CmdTknType",  "CTT_NONE        \
+                                     CTT_SEARCH_TERM \
+                                     CTT_FIELD_LIST  \
+                                     CTT_GENERAL     \
+                                     CTT_COUNT",
+                     start = -1)
+###############################################################################
+
+
+###############################################################################
+# A class for defining a shell command token
+###############################################################################
+class CmdTkn(object):
+    def __init__(self,
+                 tkn_type,
+                 cmd_start_patt,
+                 cmd_end_patt,
+                 inc_start_tkn,
+                 inc_end_tkn = False):
+        """
+        Command token constructor
+
+        :param  tkn_type:       the token type
+        :param  cmd_start_patt: pattern that marks the token's tart
+        :param  cmd_end_patt:   pattern than marks the token's end
+        :param  inc_start_tkn:  If true, cmd_start_patt forms part of the command content
+        :param  inc_end_tkn:    If True, cmd_end_patt forms part of the command content
+        """
+        self.tkn_type       = tkn_type
+        self.cmd_start_patt = cmd_start_patt
+        self.cmd_end_patt   = cmd_end_patt
+        self.inc_start_tkn  = inc_start_tkn
+        self.inc_end_tkn    = inc_end_tkn
+    ###########################################################################
+
+
+    ###########################################################################
+    def __str__(self):
+        """
+        String representation of a command token definition
+        """
+        return "({}, {}, {}, {}, {})".format(self.tkn_type,
+                                             self.cmd_start_patt,
+                                             self.cmd_end_patt,
+                                             self.inc_start_tkn,
+                                             self.inc_end_tkn)
+    ###########################################################################
+
+
+    ###########################################################################
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        """
+        Returns the command content in the given range
+
+        :param  tkn_src_str:            the command source string
+        :param  content_range_start:    command content range start
+        :param  content_range_end:      command content range end
+        :returns the command content
+        """
+        return tkn_src_str[content_range_start:content_range_end].strip()
+    ###########################################################################
+
+
+    ###########################################################################
+    def parse_tkn(self,
+                  tkn_src_str,
+                  tkn_start):
+        """
+        Parses the command token at a specified location in a source string
+
+        :param  tkn_src_str:    the command source string
+        :param  tkn_start:      token start index
+        :returns the command content and the index of the token's end
+        """
+        tkn_end = len(tkn_src_str) - 1
+        content_range_start = tkn_start + (0 if self.inc_start_tkn else 1)
+        content_range_end   = len(tkn_src_str)
+
+        #
+        # Identify the end of the command token, and extract its content
+        #
+        end_tkn_match = re.search(self.cmd_end_patt, tkn_src_str[tkn_start+1:])
+        if end_tkn_match:
+            tkn_end = tkn_start + end_tkn_match.span()[1]
+            if self.inc_end_tkn:
+                content_range_end = tkn_end
+            else:
+                content_range_end = tkn_start + end_tkn_match.span()[0] + 1
+        cmd_content = self.get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+
+        return cmd_content, tkn_end
+###############################################################################
+
+
+###############################################################################
+# Command token subclass for parsing a dictionary search term
+###############################################################################
+class DictSearchTermCmdTkn(CmdTkn):
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        cmd_content = None
+        cmd_comps = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end).split()
+        cmd_comps.reverse()
+        if len(cmd_comps) >= 1:
+            search_value = cmd_comps.pop()
+            search_term_args = dict()
+            for search_term_elem in cmd_comps:
+                if str_to_bool(search_term_elem):
+                    search_term_args["use_re"] = str_to_bool(search_term_elem)
+                elif search_term_elem in DE_FLDS_NAMES:
+                    search_term_args["search_field"] = eval(search_term_elem)
+            cmd_content = DictSearchTerm(search_value, **search_term_args)
+        return cmd_content
+###############################################################################
+
+
+###############################################################################
+# Command token subclass for parsing a dictionary field list
+###############################################################################
+class FldListCmdTkn(CmdTkn):
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        raw_cmd_content = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+        return [eval(field_name) for field_name in raw_cmd_content.split()]
+###############################################################################
+
+
+###############################################################################
+# Command tokens for searching the dictionary
+###############################################################################
+SEARCH_CMD_TOKENS = \
+[
+    DictSearchTermCmdTkn(CmdTknType.CTT_SEARCH_TERM, "\(", "\)", False),
+    FldListCmdTkn(CmdTknType.CTT_FIELD_LIST, "\[", "\]", False),
+    CmdTkn(CmdTknType.CTT_GENERAL, "\"", "\"", False),
+    CmdTkn(CmdTknType.CTT_GENERAL, "[^\s]", "[\s]", True)
+]
+###############################################################################
+
+
+###############################################################################
+def parse_dict_search_cmd(cmd,
+                          cmd_tkn_defs = SEARCH_CMD_TOKENS):
+    # type (str) -> Dict
+    """
+    Parses the components of a command for a dictionary search
+
+    :param  cmd:    The command
+    :returns a mapping between command component names and values
+    """
+    search_expr = None
+    cmd_comps = dict()
+    if cmd:
+        #
+        # Parse the command character by character...
+        #
+        tkn_start = 0
+        while tkn_start < len(cmd):
+            #
+            # Identify the latest token's definition
+            #
+            tkn_def_matches = [defn for defn in cmd_tkn_defs if re.search(defn.cmd_start_patt, cmd[tkn_start])]
+            tkn_def = tkn_def_matches[0] if len(tkn_def_matches) > 0 else None
+
+            if tkn_def:
+                cmd_content, tkn_end = tkn_def.parse_tkn(cmd, tkn_start)
+
+                if tkn_def.tkn_type == CmdTknType.CTT_FIELD_LIST:
+                    cmd_comps["fields"] = cmd_content
+                elif tkn_def.tkn_type == CmdTknType.CTT_SEARCH_TERM:
+                    search_expr = cmd_comps.get("search_expr", list())
+                    if isinstance(search_expr, list):
+                        search_expr.append(cmd_content)
+                        cmd_comps["search_expr"] = search_expr
+                else:
+                    if str_to_bool(cmd_content) is not None:
+                        search_expr = cmd_comps.get("search_expr", None)
+                        if (not search_expr or isinstance(search_expr, str)) and not "use_re" in cmd_comps:
+                            cmd_comps["use_re"] = str_to_bool(cmd_content)
+                        elif not "flatten_pinyin" in cmd_comps:
+                            cmd_comps["flatten_pinyin"] = str_to_bool(cmd_content)
+                        elif not "compact" in cmd_comps:
+                            cmd_comps["compact"] = str_to_bool(cmd_content)
+                    else:
+                        if cmd_content in DE_FLDS_NAMES:
+                            cmd_comps["search_field"] = eval(cmd_content)
+                        elif not search_expr:
+                            cmd_comps["search_expr"] = cmd_content
+                        elif not "indent_str" in cmd_comps:
+                            cmd_comps["indent_str"] = cmd_content
+                tkn_start = tkn_end + 1
+            else:
+                #
+                # Advance position in the command
+                #
+                tkn_start += 1
+
+    return cmd_comps
+###############################################################################
+
+
+###############################################################################
+def dict_search_shell(dictionary):
+    PROMPT = "$ "
+    CMD_QUIT = "q"
+
+    while True:
+        command = input(PROMPT)
+        if command.lower() == CMD_QUIT:
+            break
+        cmd_comps = parse_dict_search_cmd(command)
+        search_expr = cmd_comps.pop("search_expr", None)
+        if search_expr:
+            dictionary.show_search(search_expr, **cmd_comps)
+###############################################################################
+
 
 ###############################################################################
 def main():
     """
     """
-    jyut_search_term = DictSearchTerm("jyun.", DE_JYUTPING, True)
-    eng_search_term = DictSearchTerm("surname", DE_ENGLISH, True)
+    jyut_search_term = DictSearchTerm("jyun.", DE_FLD_JYUTPING, True)
+    eng_search_term = DictSearchTerm("surname", DE_FLD_ENGLISH, True)
     canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
-    canto_dict.show_search("樂", fields = DE_FIELDS)
-    canto_dict.show_search("樂", fields = DE_FIELDS, flatten_pinyin = False, indent_str = "!!!!")
+    canto_dict.show_search("樂", fields = DE_FLDS)
+    canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
+
+    dict_search_shell(canto_dict)
+
 
 ###############################################################################
 
