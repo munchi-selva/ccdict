@@ -724,17 +724,24 @@ class DictSearchTermCmdTkn(CmdTkn):
                         content_range_start,
                         content_range_end):
         cmd_content = None
-        cmd_comps = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end).split()
-        cmd_comps.reverse()
-        if len(cmd_comps) >= 1:
-            search_value = cmd_comps.pop()
+        raw_content = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+        search_val_patt = '(?P<search_val_complex>"(?P<search_val_quoted>[^"]+)")|(?P<search_val>[^\\s]+)'
+        search_val_match = re.match(search_val_patt, raw_content)
+        if search_val_match:
+            search_value = search_val_match["search_val_quoted"]
+            if not search_value:
+                search_value = search_val_match["search_val"]
+
             search_term_args = dict()
-            for search_term_elem in cmd_comps:
-                if str_to_bool(search_term_elem):
-                    search_term_args["use_re"] = str_to_bool(search_term_elem)
-                elif search_term_elem in DE_FLDS_NAMES:
-                    search_term_args["search_field"] = eval(search_term_elem)
+            search_term_content = raw_content[search_val_match.span()[1]:].strip()
+            if search_term_content:
+                for search_term_elem in search_term_content.split():
+                    if str_to_bool(search_term_elem):
+                        search_term_args["use_re"] = str_to_bool(search_term_elem)
+                    elif search_term_elem in DE_FLDS_NAMES:
+                        search_term_args["search_field"] = eval(search_term_elem)
             cmd_content = DictSearchTerm(search_value, **search_term_args)
+
         return cmd_content
 ###############################################################################
 
