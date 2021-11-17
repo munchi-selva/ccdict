@@ -75,7 +75,7 @@ DICT_PATT       = "{}\s+{}\s+{}\s+{}?\s*{}?\s*{}?".format(TRAD_PATT,
 # A class to help with dictionary lookup
 ###############################################################################
 class DictSearchTerm(object):
-    def __init__(self, search_value, search_field = DE_FLD_TRAD, use_re = False):
+    def __init__(self, search_value, search_field = DE_FLD_TRAD, use_re = None):
         """
         Dictionary search term constructor
 
@@ -85,7 +85,9 @@ class DictSearchTerm(object):
         """
         self.search_value = search_value
         self.search_field = search_field
-        self.use_re = use_re
+        self.use_re  = use_re
+        if self.use_re is None:
+            self.use_re = True if self.search_field == DE_FLD_ENGLISH else False
     ###########################################################################
 
 
@@ -312,31 +314,80 @@ class CantoDict(object):
                     **kwargs):
         # type (List[DictSearchTerm], Bool) -> List[Dict]
         """
-        Shows dictionary entries matching a search expression, which can be a
-        single search string or a list of dictionary search terms
+        Retrieves dictionary entries matching a search expression, which can
+        be a single search string or a list of dictionary search terms
 
         :param  search_expr:    A search string or list of search terms
         :optional/keyword arguments
             search_field:   In single search mode, the search field to use
             use_re:         If True, treat the single search term as a regular
                             expression
+            try_all_fields: If True, in single search mode, search for matches
+                            for the specified search term across different
+                            search fields
+            lazy_eval:      If True, in single search, all fields mode, use
+                            lazy evaluation, i.e. stop searching as soon as
+                            matches are found on one search field
+        :returns a list of records (as dictionaries) matching the search terms
+        """
+
+        #
+        # Retrieve optional argument values or defaults
+        #
+        try_all_fields  = kwargs.get("try_all_fields", False)
+        lazy_eval       = kwargs.get("lazy_eval", True)
+
+        search_expr_list    = list()    # List of DictSearchTerm lists...
+        search_res          = list()    # Search results
+
+        if isinstance(search_expr, str):
+            use_re = kwargs.get("use_re")
+            search_field_list = list()
+            if try_all_fields and "search_field" not in kwargs:
+                search_field_list = [DE_FLD_TRAD, DE_FLD_JYUTPING, DE_FLD_ENGLISH]
+            else:
+                search_field_list = [kwargs.get("search_field", DE_FLD_TRAD)]
+
+            for search_field in search_field_list:
+                search_expr_list.append([(DictSearchTerm(search_expr, search_field, use_re))])
+        else:
+            search_expr_list = [search_expr]
+
+        #
+        # Iterate over search expressions as required
+        #
+        for search_expr in search_expr_list:
+            search_res.extend(self.apply_search_expr(search_expr, **kwargs))
+            if lazy_eval and len(search_res) != 0:
+                break
+
+        return search_res
+    ###########################################################################
+
+
+
+    ###########################################################################
+    def apply_search_expr(self,
+                          search_expr,
+                          **kwargs):
+        # type (List[DictSearchTerm], Bool) -> List[Dict]
+        """
+        Retrieves dictionary entries matching a search expression, which is
+        formatted as a list of dictionary search terms
+
+        :param  search_expr:    A list of search terms
+        :optional/keyword arguments
             flatten_pinyin: If True, flatten pinyin groupings in search results
         :returns a list of records (as dictionaries) matching the search terms
         """
-        flatten_pinyin = kwargs.get("flatten_pinyin", True)
-        if isinstance(search_expr, str):
-            search_field    = kwargs.get("search_field", DE_FLD_TRAD)
-            use_re          = kwargs.get("use_re", False)
-            search_expr     = [DictSearchTerm(search_expr, search_field, use_re)]
-        else:
-            for e in search_expr:
-                print(e)
+        flatten_pinyin  = kwargs.get("flatten_pinyin", True)
 
         #
         # Extract the WHERE clause conditions from the search terms
         #
         where_clause = " AND ".join([search_term.search_cond for search_term in search_expr])
         where_values = tuple([search_term.search_value for search_term in search_expr])
+
         #
         # Build a two-stage query that groups records matching the search terms
         # according to Jyutping and English definition
@@ -820,6 +871,8 @@ def parse_dict_search_cmd(cmd,
                             cmd_comps["search_field"] = eval(cmd_content)
                         elif not search_expr:
                             cmd_comps["search_expr"] = cmd_content
+                            if cmd[tkn_start] == '"' and not "use_re" in cmd_comps:
+                                cmd_comps["use_re"] = False
                         elif not "indent_str" in cmd_comps:
                             cmd_comps["indent_str"] = cmd_content
                 tkn_start = tkn_end + 1
@@ -843,6 +896,7 @@ def dict_search_shell(dictionary):
         if command.lower() == CMD_QUIT:
             break
         cmd_comps = parse_dict_search_cmd(command)
+        cmd_comps["try_all_fields"] = True
         search_expr = cmd_comps.pop("search_expr", None)
         if search_expr:
             dictionary.show_search(search_expr, **cmd_comps)
