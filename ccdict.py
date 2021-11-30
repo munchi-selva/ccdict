@@ -11,6 +11,7 @@
 #   2. Providing a separate listing of specifically Cantonese terms
 # The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
 ################################################################################
+import cmd                  # Command line interpreter support
 import json
 import re
 import sqlite3
@@ -887,19 +888,29 @@ def parse_dict_search_cmd(cmd,
 
 
 ###############################################################################
-def dict_search_shell(dictionary):
-    PROMPT = "$ "
-    CMD_QUIT = "q"
+# A class that implements an interactive shell for searching the dictionary
+###############################################################################
+class DictSearchCmd(cmd.Cmd):
+    intro = "Cantonese dictionary search shell"
+    prompt = "ccdict> "
+    QUIT_CMD = "q"
+    dictionary = CantoDict("ccdict.db")
 
-    while True:
-        command = input(PROMPT)
-        if command.lower() == CMD_QUIT:
-            break
-        cmd_comps = parse_dict_search_cmd(command)
-        cmd_comps["try_all_fields"] = True
-        search_expr = cmd_comps.pop("search_expr", None)
+    def do_quit(self, arg):
+        return True
+
+    def do_search(self, arg):
+        self.cmd_comps["try_all_fields"] = True
+        search_expr = self.cmd_comps.pop("search_expr", None)
         if search_expr:
-            dictionary.show_search(search_expr, **cmd_comps)
+            self.dictionary.show_search(search_expr, **(self.cmd_comps))
+
+    def precmd(self, line):
+        if line == self.QUIT_CMD:
+            return "quit"
+
+        self.cmd_comps = parse_dict_search_cmd(line)
+        return "search"
 ###############################################################################
 
 
@@ -913,9 +924,7 @@ def main():
     canto_dict.show_search("樂", fields = DE_FLDS)
     canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
 
-    dict_search_shell(canto_dict)
-
-
+    DictSearchCmd().cmdloop()
 ###############################################################################
 
 if __name__ == "__main__":
