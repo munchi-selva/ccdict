@@ -13,6 +13,7 @@
 ################################################################################
 import cmd                  # Command line interpreter support
 import json
+import os
 import re
 import sqlite3
 from pprint import pprint   # Pretty printing module
@@ -29,6 +30,12 @@ CC_DIR              = "/mnt/d/Documents/Computing/Dictionaries"
 CCCEDICT_FILE       = "cedict_1_0_ts_utf-8_mdbg.txt"
 CCCANTO_FILE        = "cccanto-webdist.txt"
 CCCEDICT_CANTO_FILE = "cccedict-canto-readings-150923.txt"
+
+#############################################################
+# Default database file: in the same directory as this script
+#############################################################
+DICT_DB_DIR      = os.path.dirname(os.path.realpath(__file__))
+DICT_DB_FILENAME = "{}/{}".format(DICT_DB_DIR, "ccdict.db")
 
 ###############################################################################
 # Dictionary entry field names, used as SQL table column names, etc.
@@ -894,7 +901,7 @@ class DictSearchCmd(cmd.Cmd):
     intro = "Cantonese dictionary search shell"
     prompt = "ccdict> "
     QUIT_CMD = "q"
-    dictionary = CantoDict("ccdict.db")
+    dictionary = CantoDict(DICT_DB_FILENAME)
 
     def do_quit(self, arg):
         return True
@@ -928,5 +935,5 @@ def main():
 ###############################################################################
 
 if __name__ == "__main__":
-    canto_dict = CantoDict("ccdict.db")
+    canto_dict = CantoDict(DICT_DB_FILENAME)
     main()
