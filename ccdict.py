@@ -26,7 +26,7 @@ from enum import IntEnum    # Backported to python 2.7 by https://pypi.org/proje
 ##################
 # Dictionary files
 ##################
-CC_DIR              = "/mnt/d/Documents/Computing/Dictionaries"
+CC_DIR              = "/mnt/d/src/cccanto"
 CCCEDICT_FILE       = "cedict_1_0_ts_utf-8_mdbg.txt"
 CCCANTO_FILE        = "cccanto-webdist.txt"
 CCCEDICT_CANTO_FILE = "cccedict-canto-readings-150923.txt"
