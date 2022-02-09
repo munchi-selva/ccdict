@@ -30,6 +30,8 @@ CC_DIR              = "/mnt/d/src/cccanto"
 CCCEDICT_FILE       = "cedict_1_0_ts_utf-8_mdbg.txt"
 CCCANTO_FILE        = "cccanto-webdist.txt"
 CCCEDICT_CANTO_FILE = "cccedict-canto-readings-150923.txt"
+CJ_DIR              = "/mnt/d/Software_Development/Manuals,_Specs,_Tutorials/#Input_Methods/Cangjie"
+CJV5_FILE           = "Cangjie_Version_5_Encodings_[ibus].txt"
 
 #############################################################
 # Default database file: in the same directory as this script
@@ -46,6 +48,8 @@ DE_FLD_PINYIN   = "pinyin"
 DE_FLD_JYUTPING = "jyutping"
 DE_FLD_ENGLISH  = "english"
 DE_FLD_COMMENT  = "comment"
+DE_FLD_CJCODE   = "cjcode"
+DE_FLD_CJCHAR   = "character"
 
 
 DE_FLDS_NAMES   = [name for name in list(locals().keys()) if re.match("DE_FLD_", name)]
@@ -136,16 +140,20 @@ class DictSearchTerm(object):
 class CantoDict(object):
     def __init__(self,
                  dict_db_filename  = ":memory:",
-                 dict_file_dir     = CC_DIR):
+                 dict_file_dir     = CC_DIR,
+                 cj_file_dir       = CJ_DIR):
         """
         Cantonese dictionary constructor
 
         :param  dict_db_filename:   sqlite3 database filename
         :param  dict_file_dir:      Directory hosting the dictionary source
                                     (text) files
+        :param  cj_file_dir:        Directory hosting the Cangjie definition
+                                    (text) file
         """
         self.db_filename    = dict_db_filename
         self.dict_file_dir  = dict_file_dir
+        self.cj_file_dir    = cj_file_dir
 
         #
         # Set up database connection objects
@@ -159,6 +167,7 @@ class CantoDict(object):
         # Load!
         #
         self.load_dict()
+        self.load_canjie_defs()
     ###########################################################################
 
 
@@ -176,20 +185,19 @@ class CantoDict(object):
         # Copy of the cursor for convenience
         db_cur = self.db_cur
 
+
         #
-        # Check if the master dictionary table has already been created
+        # No work is required unless a reload is forced or the master dictionary
+        # table doesn't exist
         #
-        count_query = "SELECT COUNT(*) AS table_count FROM sqlite_master WHERE name = ?"
-        db_cur.execute(count_query, ("cc_canto",))
-        cc_canto_count = db_cur.fetchone()[0]
-        if cc_canto_count == 1 and not force_reload:
+        if not(force_reload) and table_exists(db_cur, "cc_canto"):
             return
 
         #
         # Clean out existing tables
         #
         for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto",
-                "cedict_joined", "cedict_orphans", "cedict_canto_orphans"]:
+                           "cedict_joined", "cedict_orphans", "cedict_canto_orphans"]:
             db_cur.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
         for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto"]:
@@ -223,7 +231,7 @@ class CantoDict(object):
         db_cur.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
             cedict_canto_tuples)
 
-        print("Base cc_canto count: {}".format(table_count(db_cur, "cc_canto")))
+        print("Base cc_canto count: {}".format(row_count(db_cur, "cc_canto")))
 
         #
         # Join CC-CEDICT with CC-CEDICT-Canto entries based on traditional,
@@ -248,7 +256,7 @@ class CantoDict(object):
                           WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_join_query)
 
-        print("After cedict join, count: {}".format(table_count(db_cur, "cc_canto")))
+        print("After cedict join, count: {}".format(row_count(db_cur, "cc_canto")))
 
         #
         # Identify CC-CEDICT orphans (entries with no CC-CEDICT-Canto match), and
@@ -273,7 +281,7 @@ class CantoDict(object):
                                     WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_cedict_orphans_query)
 
-        print("After adding cedict orphans, count: {}".format(table_count(db_cur, "cc_canto")))
+        print("After adding cedict orphans, count: {}".format(row_count(db_cur, "cc_canto")))
 
         #
         # Identify CC-CEDICT-Canto orphans and add them to the core table
@@ -300,7 +308,96 @@ class CantoDict(object):
                                           WHERE cc.{3} IS NULL".format(*DE_FLDS)
         db_cur.execute(add_cedict_canto_orphans_query)
 
-        print("After adding cedict canto orphans, count: {}".format(table_count(db_cur, "cc_canto")))
+        print("After adding cedict canto orphans, count: {}".format(row_count(db_cur, "cc_canto")))
+
+        if save_changes:
+            self.save_dict()
+    ###########################################################################
+
+
+    ###########################################################################
+    def load_canjie_defs(self, force_reload = False, save_changes = True):
+        """
+        Loads Cangjie definitions into the database as required.
+
+        :param  force_reload:   If True, unconditionally (re)load Cangjie
+                                definitions from text files
+        :param  save_changes:   If True, saves the results of a (re)load
+        """
+        # Copy of the cursor for convenience
+        db_cur = self.db_cur
+
+        cj_def_filename = "{}/{}".format(self.cj_file_dir, CJV5_FILE)
+        cj_signs_table_name = "cj_sign_mappings"
+        cj_dict_table_name = "cj_dict"
+
+        #
+        # Tags/delimiters for sections of interest in the CJ definition file
+        #
+        CJ_BEGIN_TAG    = "BEGIN_"
+        CJ_END_TAG      = "END_"
+        CJ_CODES_TAG    = "CHAR_PROMPTS_DEFINITION"
+        CJ_DEFS_TAG     = "TABLE"
+
+        #
+        # (Re)load the table that maps alphabetical keys to CJ main signs
+        #
+        if force_reload or not(table_exists(db_cur, cj_signs_table_name)):
+            print("Creating {}".format(cj_signs_table_name))
+
+            db_cur.execute("DROP TABLE IF EXISTS {}".format(cj_signs_table_name))
+            tbl_create_query = "CREATE TABLE {}(alpha_key text, \
+                                                cj_sign text)".format(cj_signs_table_name)
+            self.db_cur.execute(tbl_create_query)
+
+            with open(cj_def_filename) as cj_file:
+                cj_line = cj_file.readline()
+                while cj_line and cj_line[:-1] != CJ_BEGIN_TAG + CJ_CODES_TAG:
+                    cj_line = cj_file.readline()
+
+                cj_line = cj_file.readline()
+                while cj_line and cj_line[:-1] != CJ_END_TAG + CJ_CODES_TAG:
+                    [alpha_key, cj_sign] = cj_line.split()
+                    print("{} {}".format(alpha_key, cj_sign))
+                    insert_query = "INSERT INTO {}(alpha_key, cj_sign) VALUES(?, ?)".format(cj_signs_table_name)
+                    db_cur.execute(insert_query, (alpha_key, cj_sign))
+                    cj_line = cj_file.readline()
+
+        #
+        # Cache alpha-CJ sign mappings so CJ sequences can be displayed sensibly
+        #
+        cj_keys = str()
+        cj_signs = str()
+        db_cur.execute("SELECT alpha_key, cj_sign FROM {}".format(cj_signs_table_name))
+        for row in db_cur.fetchall():
+            cj_keys += dict(row)["alpha_key"]
+            cj_signs += dict(row)["cj_sign"]
+        self.cj_trans_table = "".maketrans(cj_keys, cj_signs)
+
+        #
+        # (Re)load the table that provides CJ mappings for individual characters
+        #
+        if force_reload or not(table_exists(db_cur, cj_dict_table_name)):
+            print("Creating {}".format(cj_dict_table_name))
+
+            db_cur.execute("DROP TABLE IF EXISTS {}".format(cj_dict_table_name))
+            tbl_create_query = "CREATE TABLE {}({} text, {} text)".format(cj_dict_table_name,
+                                                                             DE_FLD_CJCHAR,
+                                                                             DE_FLD_CJCODE)
+            db_cur.execute(tbl_create_query)
+
+            with open(cj_def_filename) as cj_file:
+                cj_line = cj_file.readline()
+                while cj_line and cj_line[:-1] != CJ_BEGIN_TAG + CJ_DEFS_TAG:
+                    cj_line = cj_file.readline()
+
+                cj_line = cj_file.readline()
+                while cj_line and cj_line[:-1] != CJ_END_TAG + CJ_DEFS_TAG:
+                    [cj_code, character, _] = cj_line.split("\t")
+
+                    cj_ins_query = "INSERT INTO {}({}, {}) VALUES(?, ?)".format(cj_dict_table_name, DE_FLD_CJCHAR, DE_FLD_CJCODE)
+                    self.db_cur.execute(cj_ins_query, (character, cj_code))
+                    cj_line = cj_file.readline()
 
         if save_changes:
             self.save_dict()
@@ -403,42 +500,62 @@ class CantoDict(object):
         canto_query = str()
         if flatten_pinyin:
             canto_query = """
-                          WITH matching_defs({0}, {1}, {2}, {3})
+                          WITH matching_defs({0}, {1}, {2}, {3}, {5})
                           AS
                               (SELECT {0},
                                       json_group_array(DISTINCT({1})),
                                       group_concat(DISTINCT({2})),
-                                      {3}
-                               FROM   cc_canto
-                               WHERE  {4}
-                               GROUP BY {0}, {3})
+                                      {3},
+                                      cj_dict.{5}
+                               FROM   cc_canto LEFT JOIN
+                                      cj_dict ON cc_canto.{0} = cj_dict.{4}
+                               WHERE  {6}
+                               GROUP BY {0}, {3}, {5})
                           SELECT {0}, {1},
                                  group_concat(DISTINCT({2})) AS {2},
-                                 json_group_array({3}) AS {3}
+                                 json_group_array(DISTINCT({3})) AS {3},
+                                 json_group_array(DISTINCT({5})) AS {5}
                           FROM   matching_defs
                           GROUP BY {0}, {1}
                           """
         else:
             canto_query = """
-                          WITH matching_defs({0}, {1}, {2}, {3})
+                          WITH matching_defs({0}, {1}, {2}, {3}, {5})
                           AS
                               (SELECT {0},
                                       json_group_array(DISTINCT({1})),
                                       group_concat(DISTINCT({2})),
-                                      {3}
-                               FROM   cc_canto
-                               WHERE  {4}
-                               GROUP BY {0}, {3}
+                                      {3},
+                                      group_concat(DISTINCT({5}))
+                               FROM   cc_canto LEFT JOIN
+                                      cj_dict ON cc_canto.{0} = cj_dict.{4}
+                               WHERE  {6}
+                               GROUP BY {0}, {3}, {5}
                                ORDER BY {2})
-                          SELECT {0}, {1}, {2}, json_group_array({3}) AS {3}
+                          SELECT {0}, {1}, {2}, json_group_array(DISTINCT({3})) AS {3}, json_group_array(DISTINCT({5})) AS {5}
                           FROM   matching_defs
                           GROUP BY {0}, {1}, {2}
                           """
         canto_query = canto_query.format(DE_FLD_TRAD, DE_FLD_JYUTPING,
                                          DE_FLD_PINYIN, DE_FLD_ENGLISH,
+                                         DE_FLD_CJCHAR, DE_FLD_CJCODE,
                                          where_clause)
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
+    ###########################################################################
+
+
+    ###########################################################################
+    def translate_cj_seq(self,
+                         cj_seq):
+        # type (str) -> str
+        """
+        Returns the Cangjie signs corresponding to a given key sequence.
+
+        :param  cj_seq:     An alphabetical string
+        :returns the corresponding Cangjie signs
+        """
+        return cj_seq.translate(self.cj_trans_table)
     ###########################################################################
 
 
@@ -463,7 +580,72 @@ class CantoDict(object):
         """
         search_results = self.search_dict(search_expr, **kwargs)
         for search_result in search_results:
-            print(format_search_result(search_result, **kwargs))
+            print(self.format_search_result(search_result, **kwargs))
+    ###########################################################################
+
+
+    ###########################################################################
+    def format_search_result(self,
+                             search_result,
+                             **kwargs):
+        # type (Dict) -> None
+        """
+        Returns a dictionary search result as a formatted string.
+
+        :param  search_result:  A dictionary search result
+        :optional/keyword arguments
+            indent_str: An indent string that prefixes each line of the formatted
+                        search result
+            compact:    If True, compact the search result to a single line
+            fields:     The fields to include in the string
+
+        :returns the search result as a string
+        """
+
+        #
+        # Retrieve settings, or initialise them to defaults
+        #
+        indent_str  = kwargs.get("indent_str",  "")
+        compact     = kwargs.get("compact",     False)
+        fields      = kwargs.get("fields",      [DE_FLD_TRAD, DE_FLD_CJCODE, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
+
+        result_strings = list()
+        decoder = json.JSONDecoder()
+
+        for field in fields:
+            if field in [DE_FLD_TRAD, DE_FLD_SIMP, DE_FLD_COMMENT]:
+                result_strings.append(search_result.get(field, ""))
+            elif field == DE_FLD_JYUTPING:
+                jyutlist = decoder.decode(search_result[DE_FLD_JYUTPING])
+                jyutstring = "[{}]".format(";".join(filter(None, jyutlist)))
+                if DE_FLD_PINYIN in fields:
+                    # Queries may generate duplicate Pinyin results (although I've yet to see
+                    # this happen)... use a sledgehammer to get rid of them
+                    pinlist = list(set(search_result[DE_FLD_PINYIN].split(",")))
+                    pinstring = "({})".format(";".join(filter(None, pinlist)))
+                    jyutstring = "{} {}".format(jyutstring, pinstring)
+                if not compact:
+                    jyutstring = "\t{}".format(jyutstring)
+                result_strings.append(jyutstring)
+            elif field == DE_FLD_ENGLISH:
+                fldlist = decoder.decode(search_result[field])
+                if fldlist:
+                    if compact:
+                        fldsep = "; "
+                        fldstring = fldsep.join(fldlist)
+                        result_strings.append(fldstring)
+                    else:
+                        result_strings.extend(["\t{}".format(fld) for fld in fldlist])
+            elif field == DE_FLD_CJCODE:
+                cjlist = decoder.decode(search_result[DE_FLD_CJCODE])
+                if cjlist and cjlist[0]:
+                    cj_strings = list()
+                    for cjseq in cjlist:
+                        cj_strings.append(self.translate_cj_seq(cjseq))
+                    result_strings.append("\t{}".format(" ".join(cj_strings)))
+
+        string_sep = " " if compact else "\n{}".format(indent_str)
+        return "{}{}".format(indent_str, string_sep.join(result_strings))
 ###############################################################################
 
 
@@ -562,7 +744,23 @@ def regexp(pattern, field):
 
 
 ###############################################################################
-def table_count(sqlcur, table_name):
+def table_exists(sqlcur, table_name):
+    # type (Cursor, str -> int)
+    """
+    Checks if a table with the given name exists
+
+    :param  sqlcur:     Cursor instance for running queries
+    :param  table_name: Name of the table
+    :returns True if the table exists
+    """
+    sqlcur.execute("SELECT COUNT(*) AS table_count FROM sqlite_master WHERE name = ?",
+                   (table_name,))
+    return (sqlcur.fetchone()[0] != 0)
+###############################################################################
+
+
+###############################################################################
+def row_count(sqlcur, table_name):
     # type (Cursor, str -> int)
     """
     Returns the row count for a given table
@@ -600,61 +798,6 @@ def show_query(sqlcur,
 # Helper functions for processing/displaying dictionary search results
 ###############################################################################
 
-###############################################################################
-def format_search_result(search_result,
-                         **kwargs):
-    # type (Dict) -> None
-    """
-    Returns a dictionary search result as a formatted string.
-
-    :param  search_result:  A dictionary search result
-    :optional/keyword arguments
-        indent_str: An indent string that prefixes each line of the formatted
-                    search result
-        compact:    If True, compact the search result to a single line
-        fields:     The fields to include in the string
-
-    :returns the search result as a string
-    """
-
-    #
-    # Retrieve settings, or initialise them to defaults
-    #
-    indent_str  = kwargs.get("indent_str",  "")
-    compact     = kwargs.get("compact",     False)
-    fields      = kwargs.get("fields",      [DE_FLD_TRAD, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
-
-    result_strings = list()
-    decoder = json.JSONDecoder()
-
-    for field in fields:
-        if field in [DE_FLD_TRAD, DE_FLD_SIMP, DE_FLD_COMMENT]:
-            result_strings.append(search_result.get(field, ""))
-        elif field == DE_FLD_JYUTPING:
-            jyutlist = decoder.decode(search_result[DE_FLD_JYUTPING])
-            jyutstring = "[{}]".format(";".join(filter(None, jyutlist)))
-            if DE_FLD_PINYIN in fields:
-                # Queries may generate duplicate Pinyin results (although I've yet to see
-                # this happen)... use a sledgehammer to get rid of them
-                pinlist = list(set(search_result[DE_FLD_PINYIN].split(",")))
-                pinstring = "({})".format(";".join(filter(None, pinlist)))
-                jyutstring = "{} {}".format(jyutstring, pinstring)
-            if not compact:
-                jyutstring = "\t{}".format(jyutstring)
-            result_strings.append(jyutstring)
-        elif field == DE_FLD_ENGLISH:
-            englist = decoder.decode(search_result[DE_FLD_ENGLISH])
-            if englist:
-                if compact:
-                    engsep = "; "
-                    engstring = engsep.join(englist)
-                    result_strings.append(engstring)
-                else:
-                    result_strings.extend(["\t{}".format(eng) for eng in englist])
-
-    string_sep = " " if compact else "\n{}".format(indent_str)
-    return "{}{}".format(indent_str, string_sep.join(result_strings))
-###############################################################################
 
 
 ###############################################################################
@@ -930,6 +1073,7 @@ def main():
     canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
     canto_dict.show_search("樂", fields = DE_FLDS)
     canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
+    canto_dict.show_search("艦")
 
     DictSearchCmd().cmdloop()
 ###############################################################################
