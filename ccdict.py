@@ -449,7 +449,7 @@ class CantoDict(object):
             use_re = kwargs.get("use_re")
             search_field_list = list()
             if try_all_fields and "search_field" not in kwargs:
-                search_field_list = [DE_FLD_TRAD, DE_FLD_JYUTPING, DE_FLD_ENGLISH]
+                search_field_list = [DE_FLD_TRAD, DE_FLD_JYUTPING, DE_FLD_ENGLISH, DE_FLD_CJCODE]
             else:
                 search_field_list = [kwargs.get("search_field", DE_FLD_TRAD)]
 
@@ -1021,9 +1021,17 @@ def parse_dict_search_cmd(cmd,
                         if cmd_content in DE_FLDS_NAMES:
                             cmd_comps["search_field"] = eval(cmd_content)
                         elif not search_expr:
-                            cmd_comps["search_expr"] = cmd_content
                             if cmd[tkn_start] == '"' and not "use_re" in cmd_comps:
-                                cmd_comps["use_re"] = False
+                                #
+                                # Unless regular expression usage has been explicitly
+                                # enabled/disabled, treat a quoted string as a
+                                # regular expression that should be matched in full,
+                                # i.e. search for ^<search_expr>$
+                                #
+                                cmd_comps["search_expr"] = "^" + cmd_content + "$"
+                                cmd_comps["use_re"] = True
+                            else:
+                                cmd_comps["search_expr"] = cmd_content
                         elif not "indent_str" in cmd_comps:
                             cmd_comps["indent_str"] = cmd_content
                 tkn_start = tkn_end + 1
