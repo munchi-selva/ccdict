@@ -5,10 +5,10 @@ A command-line based utility for looking up CC-Canto (Cantonese) dictionary data
 ### [Adapted python virtualenv setup](https://realpython.com/intro-to-pyenv/#installing-pyenv)
 ```shell
 # pyenv dependencies
-sudo apt-get update
+sudo apt-get update && \
 sudo apt-get install -y make  \
                         build-essential \
-sudo apt-get install -y libssl-dev \
+                        libssl-dev \
                         zlib1g-dev \
                         libbz2-dev \
                         libreadline-dev \
@@ -49,6 +49,6 @@ pip install click
 # Install click-shell from source to access features not available in wheels
 export CLICK_VERSION=8.0.1
 git clone https://github.com/clarkperkins/click-shell.git
-cd /click-shell
+cd click-shell
 CLICK_VERSION=8.0.1 ./install.sh
 ```

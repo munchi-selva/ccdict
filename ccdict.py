@@ -20,8 +20,9 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from pprint import pformat, pprint   # Pretty printing module
-from enum import auto, Enum, IntEnum
+from enum import auto, Enum, IntEnum, StrEnum
 
 from collections import namedtuple
 from dataclasses import dataclass
@@ -59,6 +60,22 @@ DICT_DB_FILENAME = f"{DICT_DB_DIR}/ccdict.db"
 ###############################################################################
 # Dictionary entry field names, used as SQL table column names, etc.
 ###############################################################################
+# TODO: convert this to a StrEnum
+
+class DictField(StrEnum):
+    DF_TRAD     = "traditional"
+    DF_SIMP     = "simplified"
+    DF_PINYIN   = "pinyin"
+    DF_JYUTPING = "jyutping"
+    DF_ENGLISH  = "english"
+    DF_COMMENT  = "comment"
+    DF_CJCODE   = "cjcode"
+    DF_CJCHAR   = "character"
+
+DICT_FIELDS = list(DictField)
+DICT_FIELD_NAMES = [str(dict_field) for dict_field in DICT_FIELDS]
+
+
 DE_FLD_TRAD     = "traditional"
 DE_FLD_SIMP     = "simplified"
 DE_FLD_PINYIN   = "pinyin"
@@ -92,6 +109,30 @@ JYUTPING_PATT   = fr"({{(?P<{DE_FLD_JYUTPING}>[^}}]+)}})"
 ENG_PATT        = fr"(/(?P<{DE_FLD_ENGLISH}>.*)/)"
 COMMENT_PATT    = fr"(#\s+(?P<{DE_FLD_COMMENT}>.*$))"
 DICT_PATT       = fr"{TRAD_PATT}\s+{SIMP_PATT}\s+{PINYIN_PATT}\s+{JYUTPING_PATT}?\s*{ENG_PATT}?\s*{COMMENT_PATT}?"
+
+HAN_UNICODE_RANGES: list[range] = [range(0x4E00, 0x9FFF+1),     # CJK Unified Ideographs Common
+                                   range(0x3400, 0x4DBF+1),     # CJK Unified Ideographs Extension A Rare
+                                   range(0x20000, 0x2A6DF+1),   # CJK Unified Ideographs Extension B Rare, historic
+                                   range(0x2A700, 0x2B73F+1),   # CJK Unified Ideographs Extension C Rare, historic
+                                   range(0x2B740, 0x2B81F+1),   # CJK Unified Ideographs Extension D Uncommon, some in current use
+                                   range(0x2B820, 0x2CEAF +1),  # CJK Unified Ideographs Extension E Rare, historic
+                                   range(0x2CEB0, 0x2EBEF +1),  # CJK Unified Ideographs Extension F Rare, historic
+                                   range(0x30000, 0x3134F +1),  # CJK Unified Ideographs Extension G Rare, historic
+                                   range(0x31350, 0x323AF +1),  # CJK Unified Ideographs Extension H Rare, historic
+                                   range(0xF900, 0xFAFF +1),    # CJK Compatibility Ideographs Duplicates, unifiable variants, corporate characters
+                                   range(0x2F800, 0x2FA1F +1)   # CJK Compatibility Ideographs Supplement Unifiable variants
+                                   ]
+
+###############################################################################
+# General helpers
+###############################################################################
+def contains_han(string: str) -> bool:
+    """
+    Returns true if a string contains Han ideographs
+    """
+
+    return any(ord(letter) in han_range for han_range in HAN_UNICODE_RANGES for letter in string)
+
 
 ###############################################################################
 # A class to help with dictionary lookup
@@ -323,6 +364,18 @@ class CantoDict(object):
 
         print(f"After adding cedict canto orphans, count: {row_count(db_cur, 'cc_canto')}")
 
+        print("Creating indexes")
+        trad_index_name = "cc_canto_trad"
+        db_cur.execute(f"CREATE INDEX {trad_index_name} ON cc_canto({DE_FLD_TRAD})")
+
+        simp_index_name = "cc_canto_simp"
+        db_cur.execute(f"CREATE INDEX {simp_index_name} ON cc_canto({DE_FLD_SIMP})")
+
+        jyutping_index_name = "cc_canto_jyutping"
+        db_cur.execute(f"CREATE INDEX {jyutping_index_name} ON cc_canto({DE_FLD_JYUTPING})")
+
+        # Needed: free text index for DE_FLD_ENGLISH
+
         if save_changes:
             self.save_dict()
     ###########################################################################
@@ -462,21 +515,28 @@ class CantoDict(object):
         #
         try_all_fields  = kwargs.get("try_all_fields", False)
         lazy_eval       = kwargs.get("lazy_eval", True)
+        use_re          = kwargs.get("use_re", None)
 
         search_expr_list    = []    # List of DictSearchTerm lists...
         dict_entries        = []    # Search results
 
         if isinstance(search_expr, str):
-            use_re = kwargs.get("use_re")
             search_field_list = list()
             if try_all_fields and "search_field" not in kwargs:
-                search_field_list = [DE_FLD_TRAD, DE_FLD_SIMP, DE_FLD_JYUTPING, DE_FLD_ENGLISH, DE_FLD_CJCODE]
+                # If Han ideographs appear, only search DE_FLD_TRAD/DE_FLD_SIMP
+                if contains_han(search_expr):
+                    search_field_list = [DE_FLD_TRAD, DE_FLD_SIMP]
+                else:
+                    search_field_list = [DE_FLD_JYUTPING, DE_FLD_ENGLISH, DE_FLD_CJCODE]
             else:
                 search_field_list = [kwargs.get("search_field", DE_FLD_TRAD)]
 
             for search_field in search_field_list:
                 search_expr_list.append([(DictSearchTerm(search_expr, search_field, use_re))])
         else:
+            if use_re is not None:
+                for se in search_expr:
+                    se.use_re = use_re
             search_expr_list = [search_expr]
 
         #
@@ -567,7 +627,6 @@ class CantoDict(object):
                           FROM   matching_defs
                           GROUP BY {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN}
                           """
-
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
     ###########################################################################
@@ -1004,15 +1063,15 @@ class DictSearchTermCmdTkn(CmdTkn):
         field_group_name = "search_field"
         value_group_name = "search_value"
         re_search_group_name = "search_with_re"
-        
-        search_term_patt = fr'(?P<{field_group_name}>\w+)\s+"?(?P<{value_group_name}>[^"]+)"?(\s+(?P<{re_search_group_name}>\w+))?'
+
+        search_term_patt = fr"(?P<{field_group_name}>\w+)\s+'?(?P<{value_group_name}>[^']+)'?(\s+(?P<{re_search_group_name}>\w+))?"
 
         search_val_match = re.match(search_term_patt, raw_content)
         if search_val_match is not None:
             match_groups = search_val_match.groupdict()
             search_field = match_groups[field_group_name]
             search_value = match_groups[value_group_name]
-            search_with_re = match_groups[re_search_group_name] or False
+            search_with_re = match_groups[re_search_group_name] or None
 
             cmd_content = DictSearchTerm(search_value, search_field=eval(search_field), use_re=search_with_re)
 
@@ -1341,7 +1400,8 @@ def ccdict_shell(ctx: click.Context):
 # Search behaviour options
 @click.option("--all/--not-all", default=True, help="Search for matches for the search term across different search fields")
 @click.option("--lazy/--not-lazy", default=True, help="Stop searching as soon as matches are found on one search field")
-@click.option("-r", "--use-re", is_flag=True, default=None)
+@click.option("--re/--no-re", default=None, help="Use regular expression searches")
+#@click.option("-r", "--use-re", is_flag=True, default=None)
                           #(DICT_OPT_SRCH_FLD,       "str",  None, True),
                           #(DICT_OPT_DISP_COMPACT,   "bool", False, False),
                           #(DICT_OPT_DISP_INDENT,    "str",  "", False)]
@@ -1356,7 +1416,7 @@ def ccdict_shell(ctx: click.Context):
 def search(ctx: click.Context, search_term: str,
            all: bool,
            lazy: bool,
-           use_re: Optional[bool],
+           re: Optional[bool],
            flatten: bool,
            display_field: List[str],
            compact: bool,
@@ -1365,7 +1425,7 @@ def search(ctx: click.Context, search_term: str,
                                        cmd_tkn_defs = SEARCH_CMD_TOKENS)
     cmd_comps["try_all_fields"] = all
     cmd_comps["lazy_eval"] = lazy
-    cmd_comps["use_re"] = use_re
+    cmd_comps["use_re"] = re
     cmd_comps["flatten_pinyin"] = flatten
     cmd_comps["fields"] = [eval(field_name) for field_name in display_field]
     cmd_comps["output_format"] = CantoDict.DictOutputFormat.__getitem__(f"DOF_{output_format}")
@@ -1388,19 +1448,32 @@ def main():
     # Test search terms
     multi_jyutping_for_same_definition = "吼"
 
+#   canto_dict = CantoDict(DICT_DB_FILENAME)
+#   canto_dict.show_search("艦")
+
+#   pre_lookup_time = time.perf_counter()
+#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
+#                                                                search_field=DE_FLD_TRAD,
+#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
+#   post_lookup_time = time.perf_counter()
+#   print(dict_lookup_result)
+#   print(f"Lookup time without indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
+
+#   canto_dict = CantoDict(DICT_DB_FILENAME, build_indexes=True)
+#   pre_lookup_time = time.perf_counter()
+#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
+#                                                                search_field=DE_FLD_TRAD,
+#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
+#   post_lookup_time = time.perf_counter()
+#   print(dict_lookup_result)
+#   print(f"Lookup time with indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
+
 #   jyut_search_term = DictSearchTerm("jyun.", DE_FLD_JYUTPING, True)
 #   eng_search_term = DictSearchTerm("surname", DE_FLD_ENGLISH, True)
 #   canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
 #   canto_dict.show_search("樂", fields = DE_FLDS)
 #   canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
 #   canto_dict.show_search("艦")
-
-#   dict1 = {1: 2, 3: 4}
-#   dict2 = dict()
-#   dict2.update(dict1)
-#   dict2[1] = 3
-#   canto_logger.log(logging.INFO, dict1)
-#   canto_logger.log(logging.INFO, dict2)
 
 #   DictSearchCmd().cmdloop()
 
@@ -1417,7 +1490,7 @@ def main():
 #       print(f"Searching based on '{tkn_src_str}'")
 #       if cmd_content is not None:
 #           canto_dict.show_search([cmd_content])
- 
+
     ccdict_shell()
 ###############################################################################
 
