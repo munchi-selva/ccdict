@@ -13,24 +13,17 @@ The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
 """
 
 import ast                  # Abstract syntax tree helper, e.g. can convert a "list-like" string to a list
-import cmd                  # Command line interpreter support
 import click
 import logging
 import os
 import re
 import sqlite3
 import sys
-import time
-from pprint import pformat, pprint   # Pretty printing module
 from enum import auto, Enum, IntEnum, StrEnum
 
-from collections import namedtuple
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Dict, List, Union
 
-from click_shell import make_click_shell, Shell
-from shell_with_default.shell_with_default import click_group_with_default, ClickShellWithDefault
-
+from sql_utils import regexp, row_count, table_exists
 
 canto_logger    = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stdout)
@@ -235,6 +228,7 @@ class CantoDict(object):
     def load_dict(self, force_reload: bool = False, save_changes: bool = True):
         """
         Loads the dictionary data from the database file.
+
         If the database is empty, or a reload is required, loads the data from
         the dictionary text files.
 
@@ -852,84 +846,9 @@ def parse_dict_entries(dict_filename,
 
 
 
-
-###############################################################################
-# General sqlite helper functions
-###############################################################################
-
-###############################################################################
-def regexp(pattern, field):
-    # type (str, str) -> Bool
-    """
-    An implementation of the user function called by sqlite's REGEXP operator,
-    allowing WHERE clause conditions that perform regular expression matching
-    (See https://www.sqlite.org/lang_expr.html#regexp)
-
-    :param  pattern:    Regular expression to be matched
-    :param  field:      Field being regular expression tested
-    :returns True if field matches pattern.
-    """
-    re_pattern = re.compile(pattern)
-    return field and re_pattern.search(field) is not None
-###############################################################################
-
-
-###############################################################################
-def table_exists(sqlcur, table_name):
-    # type (Cursor, str -> int)
-    """
-    Checks if a table with the given name exists
-
-    :param  sqlcur:     Cursor instance for running queries
-    :param  table_name: Name of the table
-    :returns True if the table exists
-    """
-    sqlcur.execute("SELECT COUNT(*) AS table_count FROM sqlite_master WHERE name = ?",
-                   (table_name,))
-    return (sqlcur.fetchone()[0] != 0)
-###############################################################################
-
-
-###############################################################################
-def row_count(sqlcur, table_name):
-    # type (Cursor, str -> int)
-    """
-    Returns the row count for a given table
-
-    :param  sqlcur:     Cursor instance for running queries
-    :param  table_name: Name of the table
-    :returns the number of rows in the table
-    """
-    sqlcur.execute(f"SELECT COUNT(*) AS [{table_name} rows] FROM {table_name}")
-    return sqlcur.fetchone()[0]
-###############################################################################
-
-
-###############################################################################
-def show_query(sqlcur,
-               query,
-               as_dict = False):
-    # type (str -> None)
-    """
-    Shows the results of a given query
-
-    :param  sqlcur: Cursor instance for running queries
-    :param  query:  The query
-    :param as_dict: If True, displays each row returned as a dictionary
-    :returns nothing
-    """
-    if as_dict:
-        pprint([dict(row) for row in sqlcur.execute(query)])
-    else:
-        pprint([tuple(row) for row in sqlcur.execute(query)])
-###############################################################################
-
-
 ###############################################################################
 # Helper functions for processing/displaying dictionary search results
 ###############################################################################
-
-
 
 ###############################################################################
 def str_to_bool(str):
@@ -1127,7 +1046,7 @@ def parse_dict_search_cmd(cmd: str,
                           cmd_tkn_defs: List[CmdTkn] = SEARCH_CMD_TOKENS) -> Dict:
     # type (str) -> Dict
     """
-    Parses the components of a command for a dictionary search
+    Parses the components of a command for a dictionary search.
 
     :param  cmd:    The command
     :returns a mapping between command component names and values
@@ -1190,309 +1109,3 @@ def parse_dict_search_cmd(cmd: str,
 
     return cmd_comps
 ###############################################################################
-
-
-OptDef = namedtuple("OptDef",
-                    "name data_type default eval")
-#defaults = (False,))
-
-
-DictSearchOptId = IntEnum("DictSearchOptId",  "DSO_TRY_ALL \
-                                               DSO_LAZY \
-                                               DSO_FLATTEN_PINYIN \
-                                               DSO_DO_RE_SEARCH \
-                                               DSO_SEARCH_FLD \
-                                               DSO_DISPLAY_FLDS \
-                                               DSO_DISPLAY_FMT \
-                                               DSO_DISPLAY_INDENT")
-
-DictSearchOutputFormat = IntEnum("DictSearchOutputFormat",  "DSOF_ASCII \
-                                                             DSOF_JSON")
-
-@dataclass
-class DictSearchOpt:
-    T = TypeVar('T')
-
-    id: DictSearchOptId
-    type: TypeVar('T')
-    default_value: type
-    curr_val: Optional[type] = None
-
-
-###############################################################################
-# A class that implements an interactive shell for searching the dictionary
-###############################################################################
-class DictSearchCmd(cmd.Cmd):
-    intro = "Cantonese dictionary search shell"
-    prompt = "ccdict> "
-    SET_CMD = "set"
-    QUIT_CMD = "q"
-    HELP_CMD = "?"
-    dictionary = CantoDict(DICT_DB_FILENAME)
-
-    std_opts = dict()
-    std_opts["try_all_fields"]  = True
-    std_opts["lazy_eval"]       = True
-
-    DICT_OPT_SRCH_TRY_ALL   = "try_all_fields"
-    DICT_OPT_SRCH_LAZY      = "lazy_eval"
-    DICT_OPT_SRCH_FLATTEN   = "flatten_pinyin"
-    DICT_OPT_SRCH_USE_RE    = "use_re"
-    DICT_OPT_SRCH_FLD       = "search_field"
-    DICT_OPT_DISP_COMPACT   = "compact"
-    DICT_OPT_DISP_FLDS      = "fields"
-    DICT_OPT_DISP_INDENT    = "indent_str"
-
-    OPT_DEFS = [OptDef(DICT_OPT_SRCH_TRY_ALL,   "bool", True, False),
-                OptDef(DICT_OPT_SRCH_LAZY,      "bool", True, False),
-                OptDef(DICT_OPT_SRCH_FLATTEN,   "bool", True, False),
-                OptDef(DICT_OPT_SRCH_USE_RE,    "bool", None, False),
-                OptDef(DICT_OPT_SRCH_FLD,       "str",  None, True),
-                OptDef(DICT_OPT_DISP_COMPACT,   "bool", False, False),
-                OptDef(DICT_OPT_DISP_FLDS,      "list", ["DE_FLD_TRAD", "DE_FLD_CJCODE", "DE_FLD_JYUTPING", "DE_FLD_ENGLISH"], True),
-                OptDef(DICT_OPT_DISP_INDENT,    "str",  "", False)]
-    def __init__(self):
-        super().__init__()
-        self.settings = dict()
-        for opt_def in DictSearchCmd.OPT_DEFS:
-            self.settings[opt_def.name] = {"def": opt_def}
-
-    def do_quit(self, arg):
-        return True
-
-    def do_help(self, arg):
-        cmd_indent = "\t"
-        opt_indent = "\t    "
-        topic_field = "field"
-
-        help_string = ""
-        if arg == topic_field:
-            help_string = "Valid dictionary entry fields\n" + \
-                          cmd_indent + "DE_FLD_TRAD:\ttraditional Chinese\n" + \
-                          cmd_indent + "DE_FLD_SIMP:\tsimplified Chinese\n" + \
-                          cmd_indent + "DE_FLD_JYUTPING:\tJyutping transcription\n" + \
-                          cmd_indent + "DE_FLD_PINYIN:\tPinyin transcription\n" + \
-                          cmd_indent + "DE_FLD_ENGLISH:\tEnglish definition\n" + \
-                          cmd_indent + "DE_FLD_CJCODE:\tChangJie code"
-        else:
-            help_string = "usage: " + \
-                            cmd_indent + "search_term [search_field] [use_regex] [output_field1 ...]\n" + \
-                            cmd_indent + "search_exp1 [search_exp2 ...] [output_field1 ...]\n" + \
-                            opt_indent + "search_term: search string\n" + \
-                            opt_indent + "search_field: field to match against search_term\n" + \
-                            opt_indent + "search_exp1, search_exp2, etc.: search_val | (search_val search_field [use_regex])\n" + \
-                          "Help topics: \n" + \
-                            cmd_indent + "? field (search/output field options)"
-        print(help_string)
-
-    def do_set(self, arg):
-        set_string = arg.strip() if arg else str()
-
-        # Split the setting command into option name and values
-        (opt_name, _, opt_val) = set_string.partition(" ")
-        opt_val = opt_val.strip()
-
-        # Find where the option name ends and any value change begins
-        #name_end = set_string.index(" ") if (" " in set_string) else len(set_string)
-        #opt_name = set_string[:name_end]
-        #opt_val = set_string[name_end+1:].strip()
-
-        opts_to_show = list()
-
-        if not opt_name:
-            opts_to_show = self.settings.keys()
-        elif opt_name not in self.settings:
-            print("Unrecognised option: {}".format(opt_name))
-            return
-        elif not opt_val:
-            opts_to_show.append(opt_name)
-
-        if opts_to_show:
-            for opt_name in opts_to_show:
-                # Print setting(s)
-                opt_setting = self.settings[opt_name]
-                print("{} = {}".format(opt_name, opt_setting.get("value", opt_setting["def"].default)))
-            return
-
-        opt_setting = self.settings[opt_name]
-        opt_def = opt_setting["def"]
-        opt_type = opt_def.data_type
-        if opt_type == "bool":
-            opt_val = str_to_bool(opt_val)
-        elif opt_type == "list":
-            opt_val = opt_val.split()
-
-        canto_logger.log(logging.INFO, "BEFORE settings")
-        pprint(self.settings)
-
-        print("Setting: '{}'".format(opt_name))
-        print("\tto: '{}'".format(opt_val))
-        opt_setting["value"] = opt_val
-
-        canto_logger.log(logging.INFO, "AFTER settings")
-        pprint(self.settings)
-
-    def do_search(self, arg):
-        for opt_name in self.settings:
-            if not opt_name in self.cmd_comps:
-
-                opt_setting = self.settings[opt_name]
-                opt_def = opt_setting["def"]
-                opt_type = opt_def.data_type
-                opt_val = opt_setting.get("value", opt_def.default)
-
-                if opt_type == "list":
-                    self.cmd_comps[opt_name] = list()
-                    for val in opt_val:
-                        if opt_def.eval:
-                            val = eval(val)
-                        self.cmd_comps[opt_name].append(val)
-                elif opt_type == "str" and opt_def.eval:
-                    if opt_val:
-                        self.cmd_comps[opt_name] = eval(opt_val)
-                else:
-                    self.cmd_comps[opt_name] = opt_val
-
-        search_expr = self.cmd_comps.pop("search_expr", None)
-        print(f"Search expression is {search_expr}")
-        if search_expr:
-            self.dictionary.show_search(search_expr, **(self.cmd_comps))
-
-    def precmd(self, line):
-        line = line.strip()
-
-        if line == self.QUIT_CMD:
-            return "quit"
-
-        line_tokens = line.split()
-
-        if len(line_tokens) > 0:
-            if line_tokens[0] == self.HELP_CMD or line_tokens[0] == self.SET_CMD:
-                # Allow these commands to be passed in full to respective do_*() methods
-                return line
-
-        self.cmd_comps = parse_dict_search_cmd(line)
-        return "search"
-###############################################################################
-
-
-###############################################################################
-# An interactive shell for searching the dictionary
-###############################################################################
-@click_group_with_default(prompt="ccdict $ ", debug=False, custom_parser=parse_dict_search_cmd)
-@click.pass_context
-def ccdict_shell(ctx: click.Context):
-    ctx.allow_extra_args = True
-    ctx.ignore_unknown_options = True
-    # Ensure that ctx.obj exists and is a dict
-    ctx.ensure_object(dict)
-
-    # Use ctx.obj to store the dictionary
-    ctx.obj["dictionary"] = CantoDict(DICT_DB_FILENAME)
-    initial_opts: List[DictSearchOpt] = [DictSearchOpt(id=DictSearchOptId.DSO_DISPLAY_FMT, type=DictSearchOutputFormat, default_value=DictSearchOutputFormat.DSOF_ASCII)]
-    ctx.obj["opts"]: Dict[DictSearchOptId, DictSearchOpt] = {initial_opt.id: initial_opt for initial_opt in initial_opts}
-
-
-@ccdict_shell.command(default=True)
-@click.pass_context
-@click.argument("search_term", type=str)
-
-# Search behaviour options
-@click.option("--all/--not-all", default=True, help="Search for matches for the search term across different search fields")
-@click.option("--lazy/--not-lazy", default=True, help="Stop searching as soon as matches are found on one search field")
-@click.option("--re/--no-re", default=None, help="Use regular expression searches")
-#@click.option("-r", "--use-re", is_flag=True, default=None)
-                          #(DICT_OPT_SRCH_FLD,       "str",  None, True),
-                          #(DICT_OPT_DISP_COMPACT,   "bool", False, False),
-                          #(DICT_OPT_DISP_INDENT,    "str",  "", False)]
-@click.option("--flatten/--not-flatten", default=True, help="Treat two definitions for a DE_FLD_TRAD value even if their DE_FLD_PINYIN values differ")
-
-# Search result display options
-@click.option("-d", "--display-field",
-              type=click.Choice(DE_FLDS_NAMES), multiple=True, default=["DE_FLD_TRAD", "DE_FLD_CJCODE", "DE_FLD_JYUTPING", "DE_FLD_ENGLISH"],
-              help="Include the specified field in the search output")
-@click.option("-c", "--compact", is_flag=True, default=False, help="Compact the search result to a single line")
-@click.option("-f", "--output-format", type=click.Choice(["ASCII", "JSON"]), default="ASCII", help="Format of the search result")
-def search(ctx: click.Context, search_term: str,
-           all: bool,
-           lazy: bool,
-           re: Optional[bool],
-           flatten: bool,
-           display_field: List[str],
-           compact: bool,
-           output_format: str) -> List[str]: #None:
-    cmd_comps =  parse_dict_search_cmd(search_term,
-                                       cmd_tkn_defs = SEARCH_CMD_TOKENS)
-    cmd_comps["try_all_fields"] = all
-    cmd_comps["lazy_eval"] = lazy
-    cmd_comps["use_re"] = re
-    cmd_comps["flatten_pinyin"] = flatten
-    cmd_comps["fields"] = [eval(field_name) for field_name in display_field]
-    cmd_comps["output_format"] = CantoDict.DictOutputFormat.__getitem__(f"DOF_{output_format}")
-    cmd_comps["compact"] = compact
-
-    canto_logger.debug(f"Search command components: {pformat(cmd_comps)}")
-    search_expr = cmd_comps.pop("search_expr", None)
-    if search_expr:
-        return ctx.obj["dictionary"].show_search(search_expr, **(cmd_comps))
-    return []
-
-
-###############################################################################
-
-
-###############################################################################
-def main():
-    """
-    """
-    # Test search terms
-    multi_jyutping_for_same_definition = "吼"
-
-#   canto_dict = CantoDict(DICT_DB_FILENAME)
-#   canto_dict.show_search("艦")
-
-#   pre_lookup_time = time.perf_counter()
-#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
-#                                                                search_field=DE_FLD_TRAD,
-#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
-#   post_lookup_time = time.perf_counter()
-#   print(dict_lookup_result)
-#   print(f"Lookup time without indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
-
-#   canto_dict = CantoDict(DICT_DB_FILENAME, build_indexes=True)
-#   pre_lookup_time = time.perf_counter()
-#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
-#                                                                search_field=DE_FLD_TRAD,
-#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
-#   post_lookup_time = time.perf_counter()
-#   print(dict_lookup_result)
-#   print(f"Lookup time with indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
-
-#   jyut_search_term = DictSearchTerm("jyun.", DE_FLD_JYUTPING, True)
-#   eng_search_term = DictSearchTerm("surname", DE_FLD_ENGLISH, True)
-#   canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
-#   canto_dict.show_search("樂", fields = DE_FLDS)
-#   canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
-#   canto_dict.show_search("艦")
-
-#   DictSearchCmd().cmdloop()
-
-#   t = DictSearchTermCmdTkn(CmdTknType.CTT_SEARCH_TERM, r"\(", r"\)", False)
-#   test_strs = [
-#                   'DE_FLD_ENGLISH "Hello" true',
-#                   'DE_FLD_ENGLISH "Hello"',
-#                   'DE_FLD_ENGLISH   hello  ',
-#                   'DE_FLD_ENGLISH',
-#                   'DE_FLD_TRAD   "^我.*$"   true'
-#               ]
-#   for tkn_src_str in test_strs:
-#       cmd_content = t.get_cmd_content(tkn_src_str, 0, len(tkn_src_str))
-#       print(f"Searching based on '{tkn_src_str}'")
-#       if cmd_content is not None:
-#           canto_dict.show_search([cmd_content])
-
-    ccdict_shell()
-###############################################################################
-
-if __name__ == "__main__":
-    main()
