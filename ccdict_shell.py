@@ -6,6 +6,7 @@
 
 import click
 import logging
+import re
 import sys
 from pprint import pformat
 from enum import IntEnum
@@ -31,10 +32,246 @@ from ccdict import (
     DE_FLD_ENGLISH,
     DE_FLD_CJCODE,
     DE_FLDS_NAMES,
-    DICT_DB_FILENAME,
-    parse_dict_search_cmd,
-    SEARCH_CMD_TOKENS
+    DICT_DB_FILENAME
 )
+
+def str_to_bool(bool_candidate: str) -> bool:
+    """
+    Converts a string to a boolean (if possible).
+
+    Args:
+        bool_candidate: A string
+
+    Returns:
+        True/False/None depending on the value of the input string
+    """
+    if bool_candidate.lower() in ("1", "t", "true"):
+        return True
+    elif bool_candidate.lower() in ("0", "f", "false"):
+        return False
+    return None
+
+
+###############################################################################
+# Shell command types enum
+###############################################################################
+CmdTknType = IntEnum("CmdTknType",  "CTT_NONE        \
+                                     CTT_SEARCH_TERM \
+                                     CTT_FIELD_LIST  \
+                                     CTT_GENERAL     \
+                                     CTT_COUNT",
+                     start = -1)
+###############################################################################
+
+
+class CmdTkn(object):
+    """Defines a shell command token."""
+    def __init__(self,
+                 tkn_type,
+                 cmd_start_patt,
+                 cmd_end_patt,
+                 inc_start_tkn,
+                 inc_end_tkn = False):
+        """
+        Command token constructor
+
+        :param  tkn_type:       the token type
+        :param  cmd_start_patt: pattern that marks the token's tart
+        :param  cmd_end_patt:   pattern than marks the token's end
+        :param  inc_start_tkn:  If true, cmd_start_patt forms part of the command content
+        :param  inc_end_tkn:    If True, cmd_end_patt forms part of the command content
+        """
+        self.tkn_type       = tkn_type
+        self.cmd_start_patt = cmd_start_patt
+        self.cmd_end_patt   = cmd_end_patt
+        self.inc_start_tkn  = inc_start_tkn
+        self.inc_end_tkn    = inc_end_tkn
+    ###########################################################################
+
+
+    ###########################################################################
+    def __str__(self):
+        """String representation of a command token definition."""
+        return "({}, {}, {}, {}, {})".format(self.tkn_type,
+                                             self.cmd_start_patt,
+                                             self.cmd_end_patt,
+                                             self.inc_start_tkn,
+                                             self.inc_end_tkn)
+    ###########################################################################
+
+
+    ###########################################################################
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        """
+        Returns the command content in the given range
+
+        :param  tkn_src_str:            the command source string
+        :param  content_range_start:    command content range start
+        :param  content_range_end:      command content range end
+        :returns the command content
+        """
+        return tkn_src_str[content_range_start:content_range_end].strip()
+    ###########################################################################
+
+
+    ###########################################################################
+    def parse_tkn(self,
+                  tkn_src_str,
+                  tkn_start):
+        """
+        Parses the command token at a specified location in a source string
+
+        :param  tkn_src_str:    the command source string
+        :param  tkn_start:      token start index
+        :returns the command content and the index of the token's end
+        """
+        tkn_end = len(tkn_src_str) - 1
+        content_range_start = tkn_start + (0 if self.inc_start_tkn else 1)
+        content_range_end   = len(tkn_src_str)
+
+        #
+        # Identify the end of the command token, and extract its content
+        #
+        end_tkn_match = re.search(self.cmd_end_patt, tkn_src_str[tkn_start+1:])
+        if end_tkn_match:
+            tkn_end = tkn_start + end_tkn_match.span()[1]
+            if self.inc_end_tkn:
+                content_range_end = tkn_end
+            else:
+                content_range_end = tkn_start + end_tkn_match.span()[0] + 1
+        cmd_content = self.get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+
+        return cmd_content, tkn_end
+###############################################################################
+
+
+###############################################################################
+# Command token subclass for parsing a dictionary search term
+###############################################################################
+class DictSearchTermCmdTkn(CmdTkn):
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        cmd_content = None
+        raw_content = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+
+        field_group_name = "search_field"
+        value_group_name = "search_value"
+        re_search_group_name = "search_with_re"
+
+        search_term_patt = fr"(?P<{field_group_name}>\w+)\s+'?(?P<{value_group_name}>[^']+)'?(\s+(?P<{re_search_group_name}>\w+))?"
+
+        search_val_match = re.match(search_term_patt, raw_content)
+        if search_val_match is not None:
+            match_groups = search_val_match.groupdict()
+            search_field = match_groups[field_group_name]
+            search_value = match_groups[value_group_name]
+            search_with_re = match_groups[re_search_group_name] or None
+
+            cmd_content = DictSearchTerm(search_value, search_field=eval(search_field), use_re=search_with_re)
+
+        return cmd_content
+###############################################################################
+
+
+###############################################################################
+# Command token subclass for parsing a dictionary field list
+###############################################################################
+class FldListCmdTkn(CmdTkn):
+    def get_cmd_content(self,
+                        tkn_src_str,
+                        content_range_start,
+                        content_range_end):
+        raw_cmd_content = super().get_cmd_content(tkn_src_str, content_range_start, content_range_end)
+        return [eval(field_name) for field_name in raw_cmd_content.split()]
+###############################################################################
+
+
+###############################################################################
+# Command tokens for searching the dictionary
+###############################################################################
+SEARCH_CMD_TOKENS: List[CmdTkn] = \
+[
+    DictSearchTermCmdTkn(CmdTknType.CTT_SEARCH_TERM, r"\(", r"\)", False),
+    FldListCmdTkn(CmdTknType.CTT_FIELD_LIST, r"\[", r"\]", False),
+    CmdTkn(CmdTknType.CTT_GENERAL, r"\"", r"\"", False),
+    CmdTkn(CmdTknType.CTT_GENERAL, r"[^\s]", r"[\s]", True)
+]
+###############################################################################
+
+
+###############################################################################
+def parse_dict_search_cmd(cmd: str,
+                          cmd_tkn_defs: List[CmdTkn] = SEARCH_CMD_TOKENS) -> Dict:
+    # type (str) -> Dict
+    """
+    Parses the components of a command for a dictionary search.
+
+    :param  cmd:    The command
+    :returns a mapping between command component names and values
+    """
+    search_expr = None
+    cmd_comps = dict()
+    if cmd:
+        #
+        # Parse the command character by character...
+        #
+        tkn_start = 0
+        while tkn_start < len(cmd):
+            #
+            # Identify the latest token's definition
+            #
+            tkn_def_matches = [defn for defn in cmd_tkn_defs if re.search(defn.cmd_start_patt, cmd[tkn_start])]
+            tkn_def = tkn_def_matches[0] if len(tkn_def_matches) > 0 else None
+
+            if tkn_def:
+                cmd_content, tkn_end = tkn_def.parse_tkn(cmd, tkn_start)
+                if tkn_def.tkn_type == CmdTknType.CTT_FIELD_LIST:
+                    cmd_comps["fields"] = cmd_content
+                elif tkn_def.tkn_type == CmdTknType.CTT_SEARCH_TERM:
+                    search_expr = cmd_comps.get("search_expr", list())
+                    if isinstance(search_expr, list):
+                        search_expr.append(cmd_content)
+                        cmd_comps["search_expr"] = search_expr
+                else:
+                    if str_to_bool(cmd_content) is not None:
+                        search_expr = cmd_comps.get("search_expr", None)
+                        if (not search_expr or isinstance(search_expr, str)) and not "use_re" in cmd_comps:
+                            cmd_comps["use_re"] = str_to_bool(cmd_content)
+                        elif not "flatten_pinyin" in cmd_comps:
+                            cmd_comps["flatten_pinyin"] = str_to_bool(cmd_content)
+                        elif not "compact" in cmd_comps:
+                            cmd_comps["compact"] = str_to_bool(cmd_content)
+                    else:
+                        if cmd_content in DE_FLDS_NAMES:
+                            cmd_comps["search_field"] = eval(cmd_content)
+                        elif not search_expr:
+                            if cmd[tkn_start] == '"' and not "use_re" in cmd_comps:
+                                #
+                                # Unless regular expression usage has been explicitly
+                                # enabled/disabled, treat a quoted string as a
+                                # regular expression that should be matched in full,
+                                # i.e. search for ^<search_expr>$
+                                #
+                                cmd_comps["search_expr"] = "^" + cmd_content + "$"
+                                cmd_comps["use_re"] = True
+                            else:
+                                cmd_comps["search_expr"] = cmd_content
+                        elif not "indent_str" in cmd_comps:
+                            cmd_comps["indent_str"] = cmd_content
+                tkn_start = tkn_end + 1
+            else:
+                #
+                # Advance position in the command
+                #
+                tkn_start += 1
+
+    return cmd_comps
+###############################################################################
 
 
 # I think this was a pipedream for setting up default options
