@@ -297,17 +297,17 @@ class DictSearchOpt:
     curr_val: Optional[type] = None
 
 
-#@click_group_with_default(prompt="ccdict $ ", debug=False, custom_parser=parse_dict_search_cmd)
 @click_group_with_default(prompt="ccdict $ ", debug=False)
 @click.pass_context
-def ccdict_shell(ctx: click.Context):
+@click.option("-f", "--force-reload", is_flag=True, default=False)
+def ccdict_shell(ctx: click.Context, force_reload: bool):
     ctx.allow_extra_args = True
     ctx.ignore_unknown_options = True
     # Ensure that ctx.obj exists and is a dict
     ctx.ensure_object(dict)
 
     # Use ctx.obj to store the dictionary
-    ctx.obj["dictionary"] = CantoDict(DICT_DB_FILENAME)
+    ctx.obj["dictionary"] = CantoDict(DICT_DB_FILENAME, force_reload=force_reload)
 #   initial_opts: List[DictSearchOpt] = [DictSearchOpt(id=DictSearchOptId.DSO_DISPLAY_FMT, type=DictSearchOutputFormat, default_value=DictSearchOutputFormat.DSOF_ASCII)]
 #   ctx.obj["opts"]: Dict[DictSearchOptId, DictSearchOpt] = {initial_opt.id: initial_opt for initial_opt in initial_opts}
 
