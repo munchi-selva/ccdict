@@ -3,12 +3,12 @@
 
 """Converts CC-CEDICT/CC-Canto dictionary data to query-friendly SQL format.
 
-CC-CEDICT format definition at https://CC-CEDICT.org/wiki/format:syntax.
+CC-CEDICT provides public domain Mandarin Chinese-English dictionary data,
+per https://cc-cedict.org/wiki/start.
 CC-Canto, per https://cantonese.org/about.html, builds on CC-CEDICT by:
     1. Providing Jyutping renderings of CC-CEDICT entries whose definitions are
        also valid in Cantonese (CC-CEDICT-Canto below)
     2. Providing a separate listing of specifically Cantonese terms
-The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
 """
 
 import ast                  # Abstract syntax tree helper, e.g. can convert a "list-like" string to a list
@@ -80,6 +80,8 @@ DE_FLDS_NAMES   = [name for name in list(locals().keys()) if re.match("DE_FLD_",
 DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
 
 #
+# CC-CEDICT format definition at https://CC-CEDICT.org/wiki/format:syntax.
+# The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
 # CC-CEDICT format:
 #   TRAD_CHIN SIMP_CHIN [PINYIN] /ENG 1/ENG 2/.../ENG N/
 #
@@ -260,6 +262,7 @@ class CantoDict(object):
         #
         canto_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCANTO_FILE}")
         db_cur.executemany("INSERT INTO cc_canto VALUES(?, ?, ?, ?, ?, ?)", canto_tuples)
+        print(f"Base cc_canto count: {row_count(db_cur, 'cc_canto')}")
 
         #
         # Import CC-CEDICT/-Canto data
@@ -272,7 +275,6 @@ class CantoDict(object):
         db_cur.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
             cedict_canto_tuples)
 
-        print(f"Base cc_canto count: {row_count(db_cur, 'cc_canto')}")
 
         #
         # Join CC-CEDICT with CC-CEDICT-Canto entries based on traditional,
