@@ -5,6 +5,7 @@ from ccdict.cc_data_utils import CantoDictEntry
 # Maps a dictionary line to its expected parsed Canto dictionary entries
 type ExpectedParseOutput = dict[str, list[CantoDictEntry]]
 
+type ExpectedDictFileParseOutput = dict[str, int]
 
 @pytest.fixture
 def cedict_symbols_in_chinese() -> ExpectedParseOutput:
@@ -15,7 +16,7 @@ def cedict_symbols_in_chinese() -> ExpectedParseOutput:
 @pytest.fixture
 def cedict_symbols_in_english() -> ExpectedParseOutput:
     yield {
-        "A圈兒 A圈儿 [A quan1 r5] /at symbol, @/": 
+        "A圈兒 A圈儿 [A quan1 r5] /at symbol, @/":
             [("A圈兒", "A圈儿", "a quan1 r5", None, "at symbol, @", None)],
         "A菜 A菜 [A cai4] /(Tw) A-choy, or Taiwanese lettuce (Lactuca sativa var. sativa) (from Taiwanese 萵仔菜, Tai-lo pr. [ue-á-tshài] or [e-á-tshài])/":
             [("A菜", "A菜", "a cai4", None, "(Tw) A-choy, or Taiwanese lettuce (Lactuca sativa var. sativa) (from Taiwanese 萵仔菜, Tai-lo pr. [ue-á-tshài] or [e-á-tshài])", None)],
@@ -157,3 +158,11 @@ def ccanto_parse_outputs(
     ccanto_parse_cantoisms: ExpectedParseOutput
 ) -> list[ExpectedParseOutput]:
     yield [ccanto_parse_idioms, ccanto_parse_cantoisms]
+
+@pytest.fixture
+def cc_file_parse_outputs() -> ExpectedDictFileParseOutput:
+    yield {
+        "/mnt/d/src/cccanto/cccanto-webdist.txt": 72550,
+        "/mnt/d/src/cccanto/cedict_1_0_ts_utf-8_mdbg.txt": 205922,
+        "/mnt/d/src/cccanto/cccedict-canto-readings-150923.txt": 105862
+    }

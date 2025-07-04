@@ -270,10 +270,12 @@ class CantoDict(object):
         cedict_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCEDICT_FILE}")
         db_cur.executemany("INSERT INTO cc_cedict VALUES(?, ?, ?, ?, ?, ?)",
                 cedict_tuples)
+        print(f"Base cc_cedict count: {row_count(db_cur, 'cc_cedict')}")
 
         cedict_canto_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCEDICT_CANTO_FILE}")
         db_cur.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
             cedict_canto_tuples)
+        print(f"Base cc_cedict_canto count: {row_count(db_cur, 'cc_cedict_canto')}")
 
 
         #
