@@ -11,30 +11,19 @@ CC-Canto (see https://cantonese.org/about.html) builds on CC-CEDICT by:
     2. Providing a separate listing of specifically Cantonese terms
 """
 
-import logging
+import itertools
 import re
-import sys
 from enum import StrEnum
 
 from typing import Dict, List, Optional
 
-canto_logger    = logging.getLogger(__name__)
-console_handler = logging.StreamHandler(sys.stdout)
-canto_logger.addHandler(console_handler)
-canto_logger.setLevel(logging.INFO)
-
-CCE_FILE = "/mnt/d/src/cccanto/cedict_1_0_ts_utf-8_mdbg.txt"
-CCE_CANTO_FILE = "/mnt/d/src/cccanto/cccedict-canto-readings-150923.txt"
-
 #
 # Next steps:
-# 1. Extract entries from the stock CC-* files (varying number of English translations)
-# 2. Write unit tests to test parsing of the test files
-# 3. Write unit tests for ccdict.db creation
-# 4. Move to the DictField StrEnum
+# 1. Write unit tests for ccdict.db creation
+# 2. Move to the DictField StrEnum
+# 3. Retest
+# 4. Change the return type of the parsing functions
 # 5. Retest
-# 6. Change the return type of the parsing functions
-# 7. Retest
 #
 
 ###############################################################################
@@ -78,7 +67,7 @@ DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
 #
 # CC-CEDICT-Canto format: effectively maps Pinyin to Jyutping
 #   TRAD_CHIN SIMP_CHIN [PINYIN] {JYUTPING}
-# 
+#
 # Content follow # should be treated as comments
 #
 # From the above, each CC-CEDICT and CC-Canto entry maps a single Chinese term
@@ -130,16 +119,25 @@ def parse_dict_line(dict_line: str) -> list[CantoDictEntry] | None:
     m = re.match(DICT_PATT, dict_line)
     if m:
         groups = m.groupdict()
-        eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [None]
+        jyut_transcriptions = [jt.strip().lower() for jt in groups[DE_FLD_JYUTPING].split("/") if jt.strip()] if groups[DE_FLD_JYUTPING] else [None]
+        # groups[DE_FLD_JYUTPING].split("/") if groups[DE_FLD_JYUTPING] else [None]
+        eng_defs = [ed.strip() for ed in groups[DE_FLD_ENGLISH].split("/") if ed.strip()]  if groups[DE_FLD_ENGLISH] else [None]
+        # groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [None]
         # What effect would the following have on the SQL inserts?
         # eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [""]
 
-        return [(groups[DE_FLD_TRAD],
-                groups[DE_FLD_SIMP],
-                groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
-                groups[DE_FLD_JYUTPING].lower() if groups[DE_FLD_JYUTPING] else None,
-                eng.strip() if eng else None,
-                groups[DE_FLD_COMMENT]) for eng in eng_defs]
+        return [(groups[DE_FLD_TRAD], groups[DE_FLD_SIMP],
+                 groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
+                 jyut_transcription, english_def, groups[DE_FLD_COMMENT])
+                for jyut_transcription, english_def in itertools.product(jyut_transcriptions, eng_defs)]
+
+
+#       return [(groups[DE_FLD_TRAD],
+#               groups[DE_FLD_SIMP],
+#               groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
+#               groups[DE_FLD_JYUTPING].lower() if groups[DE_FLD_JYUTPING] else None,
+#               eng.strip() if eng else None,
+#               groups[DE_FLD_COMMENT]) for eng in eng_defs]
     return None
 ###############################################################################
 

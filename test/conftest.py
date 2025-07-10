@@ -1,4 +1,7 @@
+import os
 import pytest
+import subprocess
+from pathlib import Path
 
 from ccdict.cc_data_utils import CantoDictEntry
 
@@ -135,13 +138,11 @@ def cedict_ccanto_sampling() -> ExpectedParseOutput:
             ]
     }
 
-
 @pytest.fixture
 def cedict_ccanto_parse_outputs(
     cedict_ccanto_sampling: ExpectedParseOutput
 ) -> list[ExpectedParseOutput]:
     yield [cedict_ccanto_sampling]
-
 
 @pytest.fixture
 def cedict_parse_outputs(
@@ -151,7 +152,6 @@ def cedict_parse_outputs(
 ) -> list[ExpectedParseOutput]:
     yield [cedict_symbols_in_chinese, cedict_symbols_in_english, cedict_names]
 
-
 @pytest.fixture
 def ccanto_parse_outputs(
     ccanto_parse_idioms: ExpectedParseOutput,
@@ -160,9 +160,29 @@ def ccanto_parse_outputs(
     yield [ccanto_parse_idioms, ccanto_parse_cantoisms]
 
 @pytest.fixture
-def cc_file_parse_outputs() -> ExpectedDictFileParseOutput:
-    yield {
-        "/mnt/d/src/cccanto/cccanto-webdist.txt": 72550,
-        "/mnt/d/src/cccanto/cedict_1_0_ts_utf-8_mdbg.txt": 205922,
-        "/mnt/d/src/cccanto/cccedict-canto-readings-150923.txt": 105862
-    }
+def cc_filenames() -> list[str]:
+    yield [
+        "/mnt/d/src/cccanto/cccanto-webdist.txt",
+        "/mnt/d/src/cccanto/cedict_1_0_ts_utf-8_mdbg.txt",
+        "/mnt/d/src/cccanto/cccedict-canto-readings-150923.txt"
+    ]
+
+@pytest.fixture
+def cc_file_parse_outputs(cc_filenames: list[str]) -> ExpectedDictFileParseOutput:
+    """Yields the expected output of parsing CC-* dictionary files.
+
+    Makes use of an awk script to count the expected number of dictionary
+    entries in each file.
+    """
+    count_script_path = Path(__file__).parent / "count_dict_entries.awk"
+    cc_file_parse_outputs = {}
+
+    for cc_filename in cc_filenames:
+        count_script_output = subprocess.run(
+            ["awk", "-f", str(count_script_path), cc_filename],
+            capture_output=True,
+            encoding="utf-8")
+        if not count_script_output.returncode:
+            cc_file_parse_outputs[cc_filename] = int(count_script_output.stdout[:-1])
+
+    return cc_file_parse_outputs
