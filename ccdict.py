@@ -21,6 +21,7 @@ from enum import auto, Enum, IntEnum, StrEnum
 
 from typing import Dict, List, Union
 
+from cc_data_utils import parse_dict_file
 from sql_utils import regexp, row_count, table_exists
 
 canto_logger    = logging.getLogger(__name__)
@@ -260,19 +261,19 @@ class CantoDict(object):
         #
         # Initiate core dictionary table with "pure" Cantonese data
         #
-        canto_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCANTO_FILE}")
+        canto_tuples = parse_dict_file(f"{self.dict_file_dir}/{CCCANTO_FILE}")
         db_cur.executemany("INSERT INTO cc_canto VALUES(?, ?, ?, ?, ?, ?)", canto_tuples)
         print(f"Base cc_canto count: {row_count(db_cur, 'cc_canto')}")
 
         #
         # Import CC-CEDICT/-Canto data
         #
-        cedict_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCEDICT_FILE}")
+        cedict_tuples = parse_dict_file(f"{self.dict_file_dir}/{CCCEDICT_FILE}")
         db_cur.executemany("INSERT INTO cc_cedict VALUES(?, ?, ?, ?, ?, ?)",
                 cedict_tuples)
         print(f"Base cc_cedict count: {row_count(db_cur, 'cc_cedict')}")
 
-        cedict_canto_tuples = parse_dict_entries(f"{self.dict_file_dir}/{CCCEDICT_CANTO_FILE}")
+        cedict_canto_tuples = parse_dict_file(f"{self.dict_file_dir}/{CCCEDICT_CANTO_FILE}")
         db_cur.executemany("INSERT INTO cc_cedict_canto VALUES(?, ?, ?, ?, ?, ?)",
             cedict_canto_tuples)
         print(f"Base cc_cedict_canto count: {row_count(db_cur, 'cc_cedict_canto')}")
@@ -768,75 +769,4 @@ class CantoDict(object):
             return "{}{}".format(indent_str, string_sep.join(result_strings))
 
         return ""
-###############################################################################
-
-
-
-###############################################################################
-# Dictionary file parsing helper functions
-###############################################################################
-
-###############################################################################
-def is_comment(dict_line):
-    #
-    # type (str) -> bool
-    """
-    Returns True if the dictionary file line is a comment
-
-    :param  dict_line:  Dictionary file line
-    :returns True if dict_line is a comment
-    """
-    return re.match("#", dict_line)
-###############################################################################
-
-
-###############################################################################
-def parse_dict_line(dict_line):
-    # type (str) -> Tuple
-    """
-    Parses a CC-CEDICT/CC-Canto/CC-CEDICT-Canto entry
-
-    :param  dict_line:  Dictionary entry
-    :returns a mapping between dictionary entry fields and values
-    """
-    m = re.match(DICT_PATT, dict_line)
-    if m:
-        groups = m.groupdict()
-        eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [None]
-
-        return [(groups[DE_FLD_TRAD],
-                groups[DE_FLD_SIMP],
-                groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
-                groups[DE_FLD_JYUTPING].lower() if groups[DE_FLD_JYUTPING] else None,
-                eng.strip() if eng else None,
-                groups[DE_FLD_COMMENT]) for eng in eng_defs]
-    return None
-###############################################################################
-
-
-###############################################################################
-def parse_dict_entries(dict_filename,
-                       max_entries = -1):
-    # type (str) -> List(Tuple)
-    """
-    Parses a file of CC-CEDICT/CC-Canto/CC-CEDICT-Canto entries as a list of
-    tuples
-
-    :param  dict_filename:  Name of the dictionary file
-    :param  max_entries:    Maximum number of entries to parse, -1 => parse the
-                            entire file
-    :returns a list containing each entry parsed as a tuple
-    """
-    entries = list()
-    entries_processed = 0
-    with open(dict_filename) as dict_file:
-        for dict_line in dict_file:
-            if max_entries > 0 and entries_processed >= max_entries:
-                break
-
-            if not is_comment(dict_line):
-                cccanto_tuples = parse_dict_line(dict_line)
-                entries.extend(cccanto_tuples)
-                entries_processed += 1
-    return entries
 ###############################################################################
