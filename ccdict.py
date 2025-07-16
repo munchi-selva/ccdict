@@ -19,8 +19,9 @@ import sqlite3
 import sys
 from enum import auto, Enum, IntEnum, StrEnum
 
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
+from canto_dict_types import DictField
 from cc_data_utils import parse_dict_file
 from sql_utils import regexp, row_count, table_exists
 
@@ -54,20 +55,6 @@ DICT_DB_FILENAME = f"{DICT_DB_DIR}/ccdict.db"
 ###############################################################################
 # TODO: convert this to a StrEnum
 
-class DictField(StrEnum):
-    DF_TRAD     = "traditional"
-    DF_SIMP     = "simplified"
-    DF_PINYIN   = "pinyin"
-    DF_JYUTPING = "jyutping"
-    DF_ENGLISH  = "english"
-    DF_COMMENT  = "comment"
-    DF_CJCODE   = "cjcode"
-    DF_CJCHAR   = "character"
-
-DICT_FIELDS = list(DictField)
-DICT_FIELD_NAMES = [str(dict_field) for dict_field in DICT_FIELDS]
-
-
 DE_FLD_TRAD     = "traditional"
 DE_FLD_SIMP     = "simplified"
 DE_FLD_PINYIN   = "pinyin"
@@ -76,33 +63,6 @@ DE_FLD_ENGLISH  = "english"
 DE_FLD_COMMENT  = "comment"
 DE_FLD_CJCODE   = "cjcode"
 DE_FLD_CJCHAR   = "character"
-
-DE_FLDS_NAMES   = [name for name in list(locals().keys()) if re.match("DE_FLD_", name)]
-DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
-
-#
-# CC-CEDICT format definition at https://CC-CEDICT.org/wiki/format:syntax.
-# The CC-Canto format augments CC-CEDICT entries with a Jyutping field.
-# CC-CEDICT format:
-#   TRAD_CHIN SIMP_CHIN [PINYIN] /ENG 1/ENG 2/.../ENG N/
-#
-# CC-Canto format:
-#   TRAD_CHIN SIMP_CHIN [PINYIN] {JYUTPING} /ENG 1/ENG 2/.../ENG N/
-#
-# CC-CEDICT-Canto format:
-#   TRAD_CHIN SIMP_CHIN [PINYIN] {JYUTPING}
-#
-# Given the above formats, the following regular expressions allow
-# CC-CEDICT, CC-Canto and CC-CEDICT-Canto lines to be parsed, yielding all
-# fields of a complete CC-Canto entry.
-#                   TRAD       SIMP        PINYIN     JYUTPING      ENG
-TRAD_PATT       = fr"(?P<{DE_FLD_TRAD}>[^\s]+)"
-SIMP_PATT       = fr"(?P<{DE_FLD_SIMP}>[^\s]+)"
-PINYIN_PATT     = fr"\[(?P<{DE_FLD_PINYIN}>[^]]*)\]"
-JYUTPING_PATT   = fr"({{(?P<{DE_FLD_JYUTPING}>[^}}]+)}})"
-ENG_PATT        = fr"(/(?P<{DE_FLD_ENGLISH}>.*)/)"
-COMMENT_PATT    = fr"(#\s+(?P<{DE_FLD_COMMENT}>.*$))"
-DICT_PATT       = fr"{TRAD_PATT}\s+{SIMP_PATT}\s+{PINYIN_PATT}\s+{JYUTPING_PATT}?\s*{ENG_PATT}?\s*{COMMENT_PATT}?"
 
 HAN_UNICODE_RANGES: list[range] = [range(0x4E00, 0x9FFF+1),     # CJK Unified Ideographs Common
                                    range(0x3400, 0x4DBF+1),     # CJK Unified Ideographs Extension A Rare
@@ -129,53 +89,41 @@ def contains_han(string: str) -> bool:
 # A class to help with dictionary lookup
 ###############################################################################
 class DictSearchTerm(object):
-    def __init__(self, search_value, search_field = DE_FLD_TRAD, use_re = None):
-        """
-        Dictionary search term constructor
+    def __init__(
+        self, search_value: str,
+        search_field: DictField = DictField.DF_TRAD,
+        use_re: Optional[bool] = None
+    ) -> None:
+        """Dictionary search term constructor.
 
-        :param  search_value:   The search value
-        :param  search_field:   The search field
-        :param  use_re:         If True, search using regular expressions
+        Args:
+            search_value:   The search value
+            search_field:   The search field
+            use_re:         If True, search using regular expressions
         """
         self.search_value = search_value
         self.search_field = search_field
         self.use_re  = use_re
         if self.use_re is None:
-            self.use_re = True if self.search_field == DE_FLD_ENGLISH else False
-    ###########################################################################
+            #self.use_re = True if self.search_field == DE_FLD_ENGLISH else False
+            self.use_re = self.search_field == DictField.DF_ENGLISH
 
-
-    ###########################################################################
     def __str__(self):
         """String representation of a dictionary search term."""
         return f"DictSearchTerm({self.search_value}, {self.search_field}, {self.use_re})"
-    ###########################################################################
 
     def __repr__(self):
         return self.__str__()
 
-
-    ###########################################################################
     @property
     def search_op(self):
-        """
-        A read-only property that specifies which search operation to use
-        """
+        """Read-only property that specifies which search operation to use."""
         return "REGEXP" if self.use_re else "="
-    ###########################################################################
 
-
-    ###########################################################################
     @property
     def search_cond(self):
-        """
-        A read-only property that specifies the SQL query condition
-        """
+        """Read-only property that specifies the SQL query condition."""
         return f"{self.search_field} {self.search_op} ?"
-###############################################################################
-
-
-
 
 class CantoDict(object):
     """
@@ -251,12 +199,12 @@ class CantoDict(object):
             db_cur.execute(f"DROP TABLE IF EXISTS {table_name}")
 
         for table_name in ["cc_cedict", "cc_canto", "cc_cedict_canto"]:
-            db_cur.execute(f"CREATE TABLE {table_name}({DE_FLD_TRAD} text, \
-                                                       {DE_FLD_SIMP} text, \
-                                                       {DE_FLD_PINYIN} text, \
-                                                       {DE_FLD_JYUTPING} text, \
-                                                       {DE_FLD_ENGLISH} text, \
-                                                       {DE_FLD_COMMENT} text)")
+            db_cur.execute(f"CREATE TABLE {table_name}({DictField.DF_TRAD} text, \
+                                                       {DictField.DF_SIMP} text, \
+                                                       {DictField.DF_PINYIN} text, \
+                                                       {DictField.DF_JYUTPING} text, \
+                                                       {DictField.DF_ENGLISH} text, \
+                                                       {DictField.DF_COMMENT} text)")
 
         #
         # Initiate core dictionary table with "pure" Cantonese data
@@ -284,22 +232,23 @@ class CantoDict(object):
         # simplified and pinyin column values.
         # Add these records to the core table (if they aren't already there).
         #
-        cedict_join_query = "CREATE TABLE cedict_joined AS \
-                             SELECT c.{0}, c.{1}, c.{2}, cc.{3}, c.{4}, c.{5} \
-                             FROM   cc_cedict c JOIN cc_cedict_canto cc \
-                                    ON  c.{0} = cc.{0} AND \
-                                        c.{1} = cc.{1} AND \
-                                        c.{2} = cc.{2}".format(*DE_FLDS)
+        cedict_join_query = f"CREATE TABLE cedict_joined AS \
+                              SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, \
+                                     cc.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                              FROM   cc_cedict c JOIN cc_cedict_canto cc \
+                                     ON  c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                         c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                         c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN}"
         db_cur.execute(cedict_join_query)
 
-        add_join_query = "INSERT INTO cc_canto \
-                          SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                          FROM   cedict_joined c LEFT JOIN cc_canto cc \
-                                 ON c.{0} = cc.{0} AND \
-                                    c.{1} = cc.{1} AND \
-                                    c.{2} = cc.{2} AND \
-                                    c.{4} = cc.{4} \
-                          WHERE cc.{3} IS NULL".format(*DE_FLDS)
+        add_join_query = f"INSERT INTO cc_canto \
+                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_ENGLISH} \
+                           FROM   cedict_joined c LEFT JOIN cc_canto cc \
+                                  ON c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                     c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                     c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} AND \
+                                     c.{DictField.DF_ENGLISH} = cc.{DictField.DF_ENGLISH} \
+                           WHERE cc.{DictField.DF_JYUTPING} IS NULL"
         db_cur.execute(add_join_query)
 
         print(f"After cedict join, count: {row_count(db_cur, 'cc_canto')}")
@@ -308,23 +257,23 @@ class CantoDict(object):
         # Identify CC-CEDICT orphans (entries with no CC-CEDICT-Canto match), and
         # add them to the core table
         #
-        cedict_orphans_query = "CREATE TABLE cedict_orphans AS \
-                                SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                                FROM   cc_cedict c LEFT JOIN cc_cedict_canto cc \
-                                ON     c.{0} = cc.{0} AND \
-                                       c.{1} = cc.{1} AND \
-                                       c.{2} = cc.{2} \
-                                WHERE  cc.{4} IS NULL".format(*DE_FLDS)
+        cedict_orphans_query = f"CREATE TABLE cedict_orphans AS \
+                                 SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                                 FROM   cc_cedict c LEFT JOIN cc_cedict_canto cc \
+                                 ON     c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                        c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                        c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} \
+                                 WHERE  cc.{DictField.DF_ENGLISH} IS NULL"
         db_cur.execute(cedict_orphans_query)
 
-        add_cedict_orphans_query = "INSERT INTO cc_canto \
-                                    SELECT c.{0}, c.{1}, c.{2}, c.{3}, c.{4}, c.{5} \
-                                    FROM   cedict_orphans c LEFT JOIN cc_canto cc \
-                                           ON c.{0} = cc.{0} AND \
-                                              c.{1} = cc.{1} AND \
-                                              c.{2} = cc.{2} AND \
-                                              c.{4} = cc.{4} \
-                                    WHERE cc.{3} IS NULL".format(*DE_FLDS)
+        add_cedict_orphans_query = f"INSERT INTO cc_canto \
+                                     SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                                     FROM   cedict_orphans c LEFT JOIN cc_canto cc \
+                                            ON c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                               c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                               c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} AND \
+                                               c.{DictField.DF_ENGLISH} = cc.{DictField.DF_ENGLISH} \
+                                     WHERE cc.{DictField.DF_JYUTPING} IS NULL"
         db_cur.execute(add_cedict_orphans_query)
 
         print(f"After adding cedict orphans, count: {row_count(db_cur, 'cc_canto')}")
@@ -332,39 +281,39 @@ class CantoDict(object):
         #
         # Identify CC-CEDICT-Canto orphans and add them to the core table
         #
-        cedict_canto_orphans_query = "CREATE TABLE cedict_canto_orphans AS \
-                                      SELECT cc.{0}, cc.{1}, cc.{2}, cc.{3}, \
-                                             cc.{4}, cc.{5} \
-                                      FROM   cc_cedict_canto cc LEFT JOIN cc_cedict c \
-                                      ON     c.{0} = cc.{0} AND \
-                                             c.{1} = cc.{1} AND \
-                                             c.{2} = cc.{2} \
-                                      WHERE  c.{0} IS NULL".format(*DE_FLDS)
+        cedict_canto_orphans_query = f"CREATE TABLE cedict_canto_orphans AS \
+                                       SELECT cc.{DictField.DF_TRAD}, cc.{DictField.DF_SIMP}, cc.{DictField.DF_PINYIN}, cc.{DictField.DF_JYUTPING}, \
+                                              cc.{DictField.DF_ENGLISH}, cc.{DictField.DF_COMMENT} \
+                                       FROM   cc_cedict_canto cc LEFT JOIN cc_cedict c \
+                                       ON     c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                              c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                              c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} \
+                                       WHERE  c.{DictField.DF_TRAD} IS NULL"
         db_cur.execute(cedict_canto_orphans_query)
 
-        add_cedict_canto_orphans_query = "INSERT INTO cc_canto \
-                                          SELECT c.{0}, c.{1}, c.{2}, c.{3}, \
-                                                 c.{4}, c.{5} \
-                                          FROM   cedict_canto_orphans c LEFT JOIN \
-                                                 cc_canto cc \
-                                                 ON c.{0} = cc.{0} AND \
-                                                    c.{1} = cc.{1} AND \
-                                                    c.{2} = cc.{2} AND \
-                                                    c.{4} = cc.{4} \
-                                          WHERE cc.{3} IS NULL".format(*DE_FLDS)
+        add_cedict_canto_orphans_query = f"INSERT INTO cc_canto \
+                                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
+                                                  c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                                           FROM   cedict_canto_orphans c LEFT JOIN \
+                                                  cc_canto cc \
+                                                  ON c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
+                                                     c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
+                                                     c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} AND \
+                                                     c.{DictField.DF_ENGLISH} = cc.{DictField.DF_ENGLISH} \
+                                           WHERE cc.{DictField.DF_JYUTPING} IS NULL"
         db_cur.execute(add_cedict_canto_orphans_query)
 
         print(f"After adding cedict canto orphans, count: {row_count(db_cur, 'cc_canto')}")
 
         print("Creating indexes")
         trad_index_name = "cc_canto_trad"
-        db_cur.execute(f"CREATE INDEX {trad_index_name} ON cc_canto({DE_FLD_TRAD})")
+        db_cur.execute(f"CREATE INDEX {trad_index_name} ON cc_canto({DictField.DF_TRAD})")
 
         simp_index_name = "cc_canto_simp"
-        db_cur.execute(f"CREATE INDEX {simp_index_name} ON cc_canto({DE_FLD_SIMP})")
+        db_cur.execute(f"CREATE INDEX {simp_index_name} ON cc_canto({DictField.DF_SIMP})")
 
         jyutping_index_name = "cc_canto_jyutping"
-        db_cur.execute(f"CREATE INDEX {jyutping_index_name} ON cc_canto({DE_FLD_JYUTPING})")
+        db_cur.execute(f"CREATE INDEX {jyutping_index_name} ON cc_canto({DictField.DF_JYUTPING})")
 
         # Needed: free text index for DE_FLD_ENGLISH
 
@@ -439,7 +388,7 @@ class CantoDict(object):
             print(f"Creating {cj_dict_table_name}")
 
             db_cur.execute(f"DROP TABLE IF EXISTS {cj_dict_table_name}")
-            tbl_create_query = f"CREATE TABLE {cj_dict_table_name}({DE_FLD_CJCHAR} text, {DE_FLD_CJCODE} text)"
+            tbl_create_query = f"CREATE TABLE {cj_dict_table_name}({DictField.DF_CJCHAR} text, {DictField.DF_CJCODE} text)"
             db_cur.execute(tbl_create_query)
 
             with open(cj_def_filename) as cj_file:
@@ -451,7 +400,7 @@ class CantoDict(object):
                 while cj_line and cj_line[:-1] != CJ_END_TAG + CJ_DEFS_TAG:
                     [cj_code, character, _] = cj_line.split("\t")
 
-                    cj_ins_query = f"INSERT INTO {cj_dict_table_name}({DE_FLD_CJCHAR}, {DE_FLD_CJCODE}) VALUES(?, ?)"
+                    cj_ins_query = f"INSERT INTO {cj_dict_table_name}({DictField.DF_CJCHAR}, {DictField.DF_CJCODE}) VALUES(?, ?)"
                     self.db_cur.execute(cj_ins_query, (character, cj_code))
                     cj_line = cj_file.readline()
 
@@ -482,11 +431,11 @@ class CantoDict(object):
 
     ###########################################################################
     def search_dict(self,
-                    search_expr: Union[str, List[DictSearchTerm]],
-                    **kwargs) -> List[Dict]:
-        """
-        Retrieves dictionary entries matching a search expression, which can
-        be a single search string or a list of dictionary search terms
+                    search_expr: Union[str, list[DictSearchTerm]],
+                    **kwargs) -> list[dict]:
+        """Retrieves dictionary entries matching a search expression.
+
+        The search expression can be a simple search string or a list of dictionary search terms.
 
         :param  search_expr:    A search string or list of search terms
         :optional/keyword arguments
@@ -513,15 +462,15 @@ class CantoDict(object):
         dict_entries        = []    # Search results
 
         if isinstance(search_expr, str):
-            search_field_list = list()
+            search_field_list: list[DictField] = []
             if try_all_fields and "search_field" not in kwargs:
                 # If Han ideographs appear, only search DE_FLD_TRAD/DE_FLD_SIMP
                 if contains_han(search_expr):
-                    search_field_list = [DE_FLD_TRAD, DE_FLD_SIMP]
+                    search_field_list = [DictField.DF_TRAD, DictField.DF_SIMP]
                 else:
-                    search_field_list = [DE_FLD_JYUTPING, DE_FLD_ENGLISH, DE_FLD_CJCODE]
+                    search_field_list = [DictField.DF_JYUTPING, DictField.DF_ENGLISH, DictField.DF_CJCODE]
             else:
-                search_field_list = [kwargs.get("search_field", DE_FLD_TRAD)]
+                search_field_list = [kwargs.get("search_field", DictField.DF_TRAD)]
 
             for search_field in search_field_list:
                 search_expr_list.append([(DictSearchTerm(search_expr, search_field, use_re))])
@@ -711,7 +660,8 @@ class CantoDict(object):
         indent_str      = kwargs.get("indent_str",      "")
         output_format   = kwargs.get("output_format",   CantoDict.DictOutputFormat.DOF_ASCII)
         compact         = kwargs.get("compact",         False)
-        fields          = kwargs.get("fields",          [DE_FLD_TRAD, DE_FLD_CJCODE, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
+        #fields          = kwargs.get("fields",          [DE_FLD_TRAD, DE_FLD_CJCODE, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
+        fields          = kwargs.get("fields",          [DictField.DF_TRAD, DictField.DF_CJCODE, DictField.DF_JYUTPING, DictField.DF_ENGLISH])
 
 
         if output_format == CantoDict.DictOutputFormat.DOF_JSON:
@@ -722,7 +672,7 @@ class CantoDict(object):
             # Compact fields that have multiple values per entry
             for field, value in filtered_dict_entry.items():
                 if isinstance(value, List):
-                    field_sep = ";" if field == DE_FLD_JYUTPING else "; "
+                    field_sep = ";" if field == DictField.DF_JYUTPING else "; "
                     filtered_dict_entry[field] = field_sep.join(value)
             return str(filtered_dict_entry)
         elif output_format == CantoDict.DictOutputFormat.DOF_ASCII:
@@ -730,28 +680,28 @@ class CantoDict(object):
             chinese_fld_idx = -1
 
             for field in fields:
-                if field in [DE_FLD_TRAD, DE_FLD_SIMP]:
+                if field in [DictField.DF_TRAD, DictField.DF_SIMP]:
                     field_val = search_result.get(field, "")
                     if chinese_fld_idx == -1:
                         result_strings.append(field_val)
                         chinese_fld_idx = len(result_strings) - 1
                     else:
                         result_strings[chinese_fld_idx] += f" <=> {field_val}"
-                elif field == DE_FLD_COMMENT:
+                elif field == DictField.DF_COMMENT:
                     result_strings.append(search_result.get(field, ""))
-                elif field == DE_FLD_JYUTPING:
+                elif field == DictField.DF_JYUTPING:
                     jyutstring = f"[{';'.join(search_result[field])}]"
 
-                    if DE_FLD_PINYIN in fields:
+                    if DictField.DF_PINYIN in fields:
                         # Queries may generate duplicate Pinyin results (although I've yet to see
                         # this happen)... use a sledgehammer to get rid of them
-                        pinlist = list(set(search_result[DE_FLD_PINYIN].split(",")))
+                        pinlist = list(set(search_result[DictField.DF_PINYIN].split(",")))
                         pinstring = "({})".format(";".join(filter(None, pinlist)))
                         jyutstring = f"{jyutstring} {pinstring}"
                     if not compact:
                         jyutstring = f"\t{jyutstring}"
                     result_strings.append(jyutstring)
-                elif field == DE_FLD_ENGLISH:
+                elif field == DictField.DF_ENGLISH:
                     if search_result[field]:
                         if compact:
                             fldsep = "; "
@@ -759,7 +709,7 @@ class CantoDict(object):
                             result_strings.append(fldstring)
                         else:
                             result_strings.extend([f"\t{fld}" for fld in search_result[field]])
-                elif field == DE_FLD_CJCODE:
+                elif field == DictField.DF_CJCODE:
                     cjlist = search_result[field]
                     if cjlist and cjlist[0]:
                         cj_strings = [self.translate_cj_seq(cjseq) for cjseq in cjlist]
@@ -770,3 +720,14 @@ class CantoDict(object):
 
         return ""
 ###############################################################################
+
+"""
+Expected ccdict init output
+
+Base cc_canto count: 72679
+Base cc_cedict count: 205922
+Base cc_cedict_canto count: 105862
+After cedict join, count: 242387
+After adding cedict orphans, count: 267266
+After adding cedict canto orphans, count: 271369
+"""

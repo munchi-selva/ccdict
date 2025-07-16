@@ -13,48 +13,16 @@ CC-Canto (see https://cantonese.org/about.html) builds on CC-CEDICT by:
 
 import itertools
 import re
-from enum import StrEnum
+from typing import Optional
 
-from typing import Dict, List, Optional
+from canto_dict_types import DictField
 
 #
 # Next steps:
 # 1. Write unit tests for ccdict.db creation
-# 2. Move to the DictField StrEnum
+# 2. Change the return type of the parsing functions
 # 3. Retest
-# 4. Change the return type of the parsing functions
-# 5. Retest
 #
-
-###############################################################################
-# Dictionary entry field names, used as SQL table column names, etc.
-###############################################################################
-# TODO: Move this enum to a types module
-
-class DictField(StrEnum):
-    DF_TRAD     = "traditional"
-    DF_SIMP     = "simplified"
-    DF_PINYIN   = "pinyin"
-    DF_JYUTPING = "jyutping"
-    DF_ENGLISH  = "english"
-    DF_COMMENT  = "comment"
-    DF_CJCODE   = "cjcode"
-    DF_CJCHAR   = "character"
-
-DICT_FIELDS = list(DictField)
-DICT_FIELD_NAMES = [str(dict_field) for dict_field in DICT_FIELDS]
-
-DE_FLD_TRAD     = "traditional"
-DE_FLD_SIMP     = "simplified"
-DE_FLD_PINYIN   = "pinyin"
-DE_FLD_JYUTPING = "jyutping"
-DE_FLD_ENGLISH  = "english"
-DE_FLD_COMMENT  = "comment"
-DE_FLD_CJCODE   = "cjcode"
-DE_FLD_CJCHAR   = "character"
-
-DE_FLDS_NAMES   = [name for name in list(locals().keys()) if re.match("DE_FLD_", name)]
-DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
 
 #
 # CC* dictionary file formats
@@ -76,21 +44,20 @@ DE_FLDS         = [eval(fld_name) for fld_name in DE_FLDS_NAMES]
 # that maps a single Chinese term to a single English translation, i.e.:
 #   TRAD_CHIN SIMP_CHIN PINYIN JYUTPING ENG COMMENT
 #
-TRAD_PATT       = fr"(?P<{DE_FLD_TRAD}>[^\s]+)"
-SIMP_PATT       = fr"(?P<{DE_FLD_SIMP}>[^\s]+)"
-PINYIN_PATT     = fr"\[(?P<{DE_FLD_PINYIN}>[^]]*)\]"
-JYUTPING_PATT   = fr"({{(?P<{DE_FLD_JYUTPING}>[^}}]+)}})"
-ENG_PATT        = fr"(/(?P<{DE_FLD_ENGLISH}>.*)/)"
-COMMENT_PATT    = fr"(#\s+(?P<{DE_FLD_COMMENT}>.*$))"
+TRAD_PATT       = fr"(?P<{DictField.DF_TRAD}>[^\s]+)"
+SIMP_PATT       = fr"(?P<{DictField.DF_SIMP}>[^\s]+)"
+PINYIN_PATT     = fr"\[(?P<{DictField.DF_PINYIN}>[^]]*)\]"
+JYUTPING_PATT   = fr"({{(?P<{DictField.DF_JYUTPING}>[^}}]+)}})"
+ENG_PATT        = fr"(/(?P<{DictField.DF_ENGLISH}>.*)/)"
+COMMENT_PATT    = fr"(#\s+(?P<{DictField.DF_COMMENT}>.*$))"
 DICT_PATT       = fr"{TRAD_PATT}\s+{SIMP_PATT}\s+{PINYIN_PATT}\s+{JYUTPING_PATT}?\s*{ENG_PATT}?\s*{COMMENT_PATT}?"
 
 #
 # Target format for parsing of CC-* dictionary entries, maps a single Cantonese
 # term to a single English translation
 #
-#                      TRAD SIMP PIN  JYUT ENG  COMMENT (to be dropped)
+#                      TRAD SIMP PIN            JYUT           ENG            COMMENT
 CantoDictEntry = tuple[str, str, Optional[str], Optional[str], Optional[str], str]
-
 
 
 def is_comment(dict_line: str) -> re.Match[str] | None:
@@ -119,25 +86,15 @@ def parse_dict_line(dict_line: str) -> list[CantoDictEntry] | None:
     m = re.match(DICT_PATT, dict_line)
     if m:
         groups = m.groupdict()
-        jyut_transcriptions = [jt.strip().lower() for jt in groups[DE_FLD_JYUTPING].split("/") if jt.strip()] if groups[DE_FLD_JYUTPING] else [None]
-        # groups[DE_FLD_JYUTPING].split("/") if groups[DE_FLD_JYUTPING] else [None]
-        eng_defs = [ed.strip() for ed in groups[DE_FLD_ENGLISH].split("/") if ed.strip()]  if groups[DE_FLD_ENGLISH] else [None]
-        # groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [None]
+        jyut_transcriptions = [jt.strip().lower() for jt in groups[DictField.DF_JYUTPING].split("/") if jt.strip()] if groups[DictField.DF_JYUTPING] else [None]
+        eng_defs = [ed.strip() for ed in groups[DictField.DF_ENGLISH].split("/") if ed.strip()]  if groups[DictField.DF_ENGLISH] else [None]
         # What effect would the following have on the SQL inserts?
         # eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [""]
 
-        return [(groups[DE_FLD_TRAD], groups[DE_FLD_SIMP],
-                 groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
-                 jyut_transcription, english_def, groups[DE_FLD_COMMENT])
+        return [(groups[DictField.DF_TRAD], groups[DictField.DF_SIMP],
+                 groups[DictField.DF_PINYIN].lower() if groups[DictField.DF_PINYIN] else None,
+                 jyut_transcription, english_def, groups[DictField.DF_COMMENT])
                 for jyut_transcription, english_def in itertools.product(jyut_transcriptions, eng_defs)]
-
-
-#       return [(groups[DE_FLD_TRAD],
-#               groups[DE_FLD_SIMP],
-#               groups[DE_FLD_PINYIN].lower() if groups[DE_FLD_PINYIN] else None,
-#               groups[DE_FLD_JYUTPING].lower() if groups[DE_FLD_JYUTPING] else None,
-#               eng.strip() if eng else None,
-#               groups[DE_FLD_COMMENT]) for eng in eng_defs]
     return None
 ###############################################################################
 

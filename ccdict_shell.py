@@ -25,15 +25,10 @@ canto_logger.setLevel(logging.INFO)
 
 from ccdict import (
     CantoDict,
-    DE_FLD_TRAD,
-    DE_FLD_SIMP,
-    DE_FLD_PINYIN,
-    DE_FLD_JYUTPING,
-    DE_FLD_ENGLISH,
-    DE_FLD_CJCODE,
-    DE_FLDS_NAMES,
     DICT_DB_FILENAME
 )
+
+from canto_dict_types import DictField, DICT_FIELD_NAMES
 
 def str_to_bool(bool_candidate: str) -> bool:
     """
@@ -247,7 +242,7 @@ def parse_dict_search_cmd(cmd: str,
                         elif not "compact" in cmd_comps:
                             cmd_comps["compact"] = str_to_bool(cmd_content)
                     else:
-                        if cmd_content in DE_FLDS_NAMES:
+                        if cmd_content in DICT_FIELD_NAMES:
                             cmd_comps["search_field"] = eval(cmd_content)
                         elif not search_expr:
                             if cmd[tkn_start] == '"' and not "use_re" in cmd_comps:
@@ -327,7 +322,7 @@ def ccdict_shell(ctx: click.Context, force_reload: bool):
 
 # Search result display options
 @click.option("-d", "--display-field",
-              type=click.Choice(DE_FLDS_NAMES), multiple=True, default=["DE_FLD_TRAD", "DE_FLD_CJCODE", "DE_FLD_JYUTPING", "DE_FLD_ENGLISH"],
+              type=click.Choice(DICT_FIELD_NAMES), multiple=True, default=[DictField.DF_TRAD.name, DictField.DF_CJCODE.name, DictField.DF_JYUTPING.name, DictField.DF_ENGLISH.name],
               help="Include the specified field in the search output")
 @click.option("-c", "--compact", is_flag=True, default=False, help="Compact the search result to a single line")
 @click.option("-f", "--output-format", type=click.Choice(["ASCII", "JSON"]), default="ASCII", help="Format of the search result")
@@ -336,7 +331,7 @@ def search(ctx: click.Context, search_term: str,
            lazy: bool,
            re: Optional[bool],
            flatten: bool,
-           display_field: List[str],
+           display_field: list[str],
            compact: bool,
            output_format: str) -> List[str]: #None:
     cmd_comps =  parse_dict_search_cmd(search_term,
@@ -345,7 +340,7 @@ def search(ctx: click.Context, search_term: str,
     cmd_comps["lazy_eval"] = lazy
     cmd_comps["use_re"] = re
     cmd_comps["flatten_pinyin"] = flatten
-    cmd_comps["fields"] = [eval(field_name) for field_name in display_field]
+    cmd_comps["fields"] = [DictField[field_name] for field_name in display_field]
     cmd_comps["output_format"] = CantoDict.DictOutputFormat.__getitem__(f"DOF_{output_format}")
     cmd_comps["compact"] = compact
 
