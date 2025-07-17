@@ -21,9 +21,9 @@ from enum import auto, Enum, IntEnum, StrEnum
 
 from typing import Dict, List, Optional, Union
 
-from canto_dict_types import DictField
-from cc_data_utils import parse_dict_file
-from sql_utils import regexp, row_count, table_exists
+from ccdict.canto_dict_types import DictField
+from ccdict.cc_data_utils import parse_dict_file
+from ccdict.sql_utils import regexp, row_count, table_exists
 
 canto_logger    = logging.getLogger(__name__)
 console_handler = logging.StreamHandler(sys.stdout)
@@ -660,13 +660,11 @@ class CantoDict(object):
         indent_str      = kwargs.get("indent_str",      "")
         output_format   = kwargs.get("output_format",   CantoDict.DictOutputFormat.DOF_ASCII)
         compact         = kwargs.get("compact",         False)
-        #fields          = kwargs.get("fields",          [DE_FLD_TRAD, DE_FLD_CJCODE, DE_FLD_JYUTPING, DE_FLD_ENGLISH])
         fields          = kwargs.get("fields",          [DictField.DF_TRAD, DictField.DF_CJCODE, DictField.DF_JYUTPING, DictField.DF_ENGLISH])
-
 
         if output_format == CantoDict.DictOutputFormat.DOF_JSON:
             # Grab a copy of the required fields
-            filtered_dict_entry = {field:value for field, value in search_result.items() if field in fields}
+            filtered_dict_entry = {field:value for field, value in search_result.items() if field in [f.value for f in fields]}
             logging.debug(f"Filtered dictionary entry = {filtered_dict_entry}")
 
             # Compact fields that have multiple values per entry

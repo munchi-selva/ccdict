@@ -15,7 +15,7 @@ import itertools
 import re
 from typing import Optional
 
-from canto_dict_types import DictField
+from ccdict.canto_dict_types import DictField
 
 #
 # Next steps:

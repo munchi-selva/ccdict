@@ -23,12 +23,12 @@ console_handler = logging.StreamHandler(sys.stdout)
 canto_logger.addHandler(console_handler)
 canto_logger.setLevel(logging.INFO)
 
-from ccdict import (
+from ccdict.ccdict import (
     CantoDict,
     DICT_DB_FILENAME
 )
 
-from canto_dict_types import DictField, DICT_FIELD_NAMES
+from ccdict.canto_dict_types import DictField, DICT_FIELD_NAMES
 
 def str_to_bool(bool_candidate: str) -> bool:
     """
