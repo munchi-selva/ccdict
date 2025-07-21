@@ -464,7 +464,7 @@ class CantoDict(object):
         if isinstance(search_expr, str):
             search_field_list: list[DictField] = []
             if try_all_fields and "search_field" not in kwargs:
-                # If Han ideographs appear, only search DE_FLD_TRAD/DE_FLD_SIMP
+                # If Han ideographs appear, only search DF_TRAD/DF_SIMP
                 if contains_han(search_expr):
                     search_field_list = [DictField.DF_TRAD, DictField.DF_SIMP]
                 else:

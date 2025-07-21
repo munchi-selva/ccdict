@@ -1,14 +1,28 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import pytest
 import subprocess
 from pathlib import Path
 
+from ccdict.canto_dict_types import DictField
 from ccdict.cc_data_utils import CantoDictEntry
+from ccdict.ccdict import CantoDict, DICT_DB_FILENAME
 
 # Maps a dictionary line to its expected parsed Canto dictionary entries
 type ExpectedParseOutput = dict[str, list[CantoDictEntry]]
 
 type ExpectedDictFileParseOutput = dict[str, int]
+
+# Maps a search term to its expected CantoDict search result
+type ExpectedSearchResult = dict[str, list[dict]]
+
+@pytest.fixture(scope="session")
+def canto_dict(tmp_path_factory: pytest.TempPathFactory) -> CantoDict:
+    dict_data_path = tmp_path_factory.mktemp("dict_data")
+    #yield CantoDict(dict_db_filename = str(dict_data_path / "ccdict.db"))
+    yield CantoDict(dict_db_filename = DICT_DB_FILENAME)
 
 @pytest.fixture
 def cedict_symbols_in_chinese() -> ExpectedParseOutput:
@@ -186,3 +200,100 @@ def cc_file_parse_outputs(cc_filenames: list[str]) -> ExpectedDictFileParseOutpu
             cc_file_parse_outputs[cc_filename] = int(count_script_output.stdout[:-1])
 
     return cc_file_parse_outputs
+
+@pytest.fixture
+def canto_dict_search_multi_cj() -> ExpectedSearchResult:
+    """Yields expected search results for terms with multiple CJ codes."""
+    yield {
+        "艦": [{DictField.DF_TRAD.value: "艦",
+                DictField.DF_SIMP.value: "舰",
+                DictField.DF_PINYIN.value: "jian4",
+                DictField.DF_JYUTPING.value: ["laam6"],
+                DictField.DF_ENGLISH.value: ["naval vessel", "warship"],
+                DictField.DF_CJCODE.value: ["hysit", "hysmt"]}] }
+
+@pytest.fixture
+def canto_dict_search_multi_jyutping() -> ExpectedSearchResult:
+    """Yields expected search results for terms with multiple Jyutping transcriptions."""
+    yield {
+        "吼":
+        [
+            {
+                DictField.DF_TRAD.value: "吼",
+                DictField.DF_SIMP.value: "吼",
+                DictField.DF_PINYIN.value: "hou3",
+                DictField.DF_JYUTPING.value: ["haau1", "hau2", "hau3"],
+                DictField.DF_ENGLISH.value: ["bellow of rage", "roar or howl of an animal"],
+                DictField.DF_CJCODE.value: ["rndu"]
+            },
+            {
+                DictField.DF_TRAD.value: "吼",
+                DictField.DF_SIMP.value: "吼",
+                DictField.DF_PINYIN.value: "hou3",
+                DictField.DF_JYUTPING.value: ["haau1"],
+                DictField.DF_ENGLISH.value: ["(verb) watch closely on something because of great interest",
+                                             "to howl",
+                                             "to roar",
+                                             "to shriek"],
+                DictField.DF_CJCODE.value: ["rndu"]
+            },
+            {
+                DictField.DF_TRAD.value: "吼",
+                DictField.DF_SIMP.value: "吼",
+                DictField.DF_PINYIN.value: "hou3",
+                DictField.DF_JYUTPING.value: ["hau1", "hau4"],
+                DictField.DF_ENGLISH.value: ["to keep an eye on",
+                                             "to long for",
+                                             "to lust after",
+                                             "to target",
+                                             "to watch closely"],
+                DictField.DF_CJCODE.value: ["rndu"]
+            }
+        ],
+        "樂":
+        [
+            {
+                DictField.DF_TRAD.value: "樂",
+                DictField.DF_SIMP.value: "乐",
+                DictField.DF_PINYIN.value: "le4",
+                DictField.DF_JYUTPING.value: ["lok3"],
+                DictField.DF_ENGLISH.value: ["a place name", "a surname"],
+                DictField.DF_CJCODE.value: ["vid"]
+            },
+            {
+                DictField.DF_TRAD.value: "樂",
+                DictField.DF_SIMP.value: "乐",
+                DictField.DF_JYUTPING.value: ["lok6"],
+                DictField.DF_PINYIN.value: "le4,yue4",
+                DictField.DF_ENGLISH.value: ["cheerful",
+                                             "enjoyable",
+                                             "happy",
+                                             "musical; music",
+                                             "surname Le",
+                                             "surname Yue",
+                                             "to laugh"],
+               DictField.DF_CJCODE.value: ["vid"]
+            },
+            {
+                DictField.DF_TRAD.value: "樂",
+                DictField.DF_SIMP.value: "乐",
+                DictField.DF_PINYIN.value: "le4",
+                DictField.DF_JYUTPING.value: ["ngaau6"],
+                DictField.DF_ENGLISH.value: ["to love, to be fond of, to delight in"],
+                DictField.DF_CJCODE.value: ["vid"]
+            },
+            {
+                DictField.DF_TRAD.value: "樂",
+                DictField.DF_SIMP.value: "乐",
+                DictField.DF_PINYIN.value: "le4,yue4",
+                DictField.DF_JYUTPING.value: ["ngok6", "lok6"],
+                DictField.DF_ENGLISH.value: ["music"],
+                DictField.DF_CJCODE.value: ["vid"]
+            }
+        ]
+    }
+
+@pytest.fixture
+def canto_dict_search_results(canto_dict_search_multi_cj: ExpectedSearchResult,
+                              canto_dict_search_multi_jyutping: ExpectedSearchResult) -> list[ExpectedSearchResult]:
+    yield [canto_dict_search_multi_cj, canto_dict_search_multi_jyutping]

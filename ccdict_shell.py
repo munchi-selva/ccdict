@@ -318,7 +318,7 @@ def ccdict_shell(ctx: click.Context, force_reload: bool):
 #@click.option("-r", "--use-re", is_flag=True, default=None)
                           #(DICT_OPT_SRCH_FLD,       "str",  None, True),
                           #(DICT_OPT_DISP_INDENT,    "str",  "", False)]
-@click.option("--flatten/--not-flatten", default=True, help="Treat two definitions for a DE_FLD_TRAD value even if their DE_FLD_PINYIN values differ")
+@click.option("--flatten/--not-flatten", default=True, help="Treat two definitions for a DF_TRAD value as the same even if their DF_PINYIN values differ")
 
 # Search result display options
 @click.option("-d", "--display-field",
@@ -358,28 +358,8 @@ def search(ctx: click.Context, search_term: str,
 def main():
     """
     """
-    # Test search terms
-    multi_jyutping_for_same_definition = "吼"
 
 #   canto_dict = CantoDict(DICT_DB_FILENAME)
-#   canto_dict.show_search("艦")
-
-#   pre_lookup_time = time.perf_counter()
-#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
-#                                                                search_field=DE_FLD_TRAD,
-#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
-#   post_lookup_time = time.perf_counter()
-#   print(dict_lookup_result)
-#   print(f"Lookup time without indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
-
-#   canto_dict = CantoDict(DICT_DB_FILENAME, build_indexes=True)
-#   pre_lookup_time = time.perf_counter()
-#   dict_lookup_result = canto_dict.get_formatted_search_results(multi_jyutping_for_same_definition,
-#                                                                search_field=DE_FLD_TRAD,
-#                                                                output_format=CantoDict.DictOutputFormat.DOF_JSON, fields=["jyutping", "english"])
-#   post_lookup_time = time.perf_counter()
-#   print(dict_lookup_result)
-#   print(f"Lookup time with indexes: {post_lookup_time-pre_lookup_time:0.4f} seconds")
 
 #   jyut_search_term = DictSearchTerm("jyun.", DE_FLD_JYUTPING, True)
 #   eng_search_term = DictSearchTerm("surname", DE_FLD_ENGLISH, True)
