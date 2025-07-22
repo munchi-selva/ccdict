@@ -105,7 +105,6 @@ class DictSearchTerm(object):
         self.search_field = search_field
         self.use_re  = use_re
         if self.use_re is None:
-            #self.use_re = True if self.search_field == DE_FLD_ENGLISH else False
             self.use_re = self.search_field == DictField.DF_ENGLISH
 
     def __str__(self):
@@ -315,7 +314,7 @@ class CantoDict(object):
         jyutping_index_name = "cc_canto_jyutping"
         db_cur.execute(f"CREATE INDEX {jyutping_index_name} ON cc_canto({DictField.DF_JYUTPING})")
 
-        # Needed: free text index for DE_FLD_ENGLISH
+        # Needed: free text index for DF_ENGLISH
 
         if save_changes:
             self.save_dict()
@@ -425,7 +424,7 @@ class CantoDict(object):
         Returns True if a dictionary entry can have multiple entries for the
         specified field.
         """
-        return field in [DE_FLD_JYUTPING, DE_FLD_ENGLISH, DE_FLD_CJCODE]
+        return field in [DictField.DF_JYUTPING, DictField.DF_ENGLISH, DictField.DF_CJCODE]
     ###########################################################################
 
 
@@ -529,44 +528,47 @@ class CantoDict(object):
         canto_query = str()
         if flatten_pinyin:
             canto_query = f"""
-                          WITH matching_defs({DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP})
+                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
+                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE}, {DictField.DF_SIMP})
+                          AS
+                              (SELECT {DictField.DF_TRAD},
+                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
+                                      group_concat(DISTINCT({DictField.DF_PINYIN})),
+                                      {DictField.DF_ENGLISH},
+                                      cj_dict.{DictField.DF_CJCODE},
+                                      {DictField.DF_SIMP}
+                               FROM   cc_canto LEFT JOIN
+                                      cj_dict ON cc_canto.{DictField.DF_TRAD} = cj_dict.{DictField.DF_CJCHAR}
+                               WHERE  {where_clause}
+                               GROUP BY {DictField.DF_TRAD}, {DictField.DF_ENGLISH}, {DictField.DF_CJCODE}, {DictField.DF_SIMP})
+                          SELECT {DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_SIMP},
+                                 group_concat(DISTINCT({DictField.DF_PINYIN})) AS {DictField.DF_PINYIN},
+                                 regexp_replace(json_group_array(DISTINCT({DictField.DF_ENGLISH})), 'null,?', '') AS {DictField.DF_ENGLISH},
+                                 regexp_replace(json_group_array(DISTINCT({DictField.DF_CJCODE})), 'null,?', '') AS {DictField.DF_CJCODE}
+                          FROM   matching_defs
+                          GROUP BY {DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_SIMP}
+                          """
+        else:
+            canto_query = f"""
+                          WITH matching_defs({DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN},
+                                             {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP})
                           AS
                               (SELECT {DE_FLD_TRAD},
                                       regexp_replace(json_group_array(DISTINCT({DE_FLD_JYUTPING})), 'null,?', ''),
                                       group_concat(DISTINCT({DE_FLD_PINYIN})),
                                       {DE_FLD_ENGLISH},
-                                      cj_dict.{DE_FLD_CJCODE},
+                                      group_concat(DISTINCT({DE_FLD_CJCODE})),
                                       {DE_FLD_SIMP}
                                FROM   cc_canto LEFT JOIN
                                       cj_dict ON cc_canto.{DE_FLD_TRAD} = cj_dict.{DE_FLD_CJCHAR}
                                WHERE  {where_clause}
-                               GROUP BY {DE_FLD_TRAD}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP})
-                          SELECT {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP},
-                                 group_concat(DISTINCT({DE_FLD_PINYIN})) AS {DE_FLD_PINYIN},
-                                 regexp_replace(json_group_array(DISTINCT({DE_FLD_ENGLISH})), 'null,?', '') AS {DE_FLD_ENGLISH},
-                                 regexp_replace(json_group_array(DISTINCT({DE_FLD_CJCODE})), 'null,?', '') AS {DE_FLD_CJCODE}
-                          FROM   matching_defs
-                          GROUP BY {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP}
-                          """
-        else:
-            canto_query = f"""
-                          WITH matching_defs({DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE})
-                          AS
-                              (SELECT {DE_FLD_TRAD},
-                                      regexp_replace(json_group_array(DISTINCT({DE_FLD_JYUTPING})), 'null,?', ''),
-                                      group_concat(DISTINCT({DE_FLD_PINYIN})),
-                                      {DE_FLD_ENGLISH},
-                                      group_concat(DISTINCT({DE_FLD_CJCODE}))
-                               FROM   cc_canto LEFT JOIN
-                                      cj_dict ON cc_canto.{DE_FLD_TRAD} = cj_dict.{DE_FLD_CJCHAR}
-                               WHERE  {where_clause}
-                               GROUP BY {DE_FLD_TRAD}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}
+                               GROUP BY {DE_FLD_TRAD}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP}
                                ORDER BY {DE_FLD_PINYIN})
-                          SELECT {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN},
+                          SELECT {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP}, {DE_FLD_PINYIN},
                                  regexp_replace(json_group_array(DISTINCT({DE_FLD_ENGLISH})), 'null,?', '') AS {DE_FLD_ENGLISH},
                                  regexp_replace(json_group_array(DISTINCT({DE_FLD_CJCODE})), 'null,?', '') AS {DE_FLD_CJCODE}
                           FROM   matching_defs
-                          GROUP BY {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN}
+                          GROUP BY {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP}, {DE_FLD_PINYIN}
                           """
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
