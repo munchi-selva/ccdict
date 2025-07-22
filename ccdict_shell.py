@@ -361,9 +361,6 @@ def main():
 
 #   canto_dict = CantoDict(DICT_DB_FILENAME)
 
-#   jyut_search_term = DictSearchTerm("jyun.", DE_FLD_JYUTPING, True)
-#   eng_search_term = DictSearchTerm("surname", DE_FLD_ENGLISH, True)
-#   canto_dict.show_search([jyut_search_term, eng_search_term], indent_str = "\t")
 #   canto_dict.show_search("樂", fields = DE_FLDS)
 #   canto_dict.show_search("樂", fields = DE_FLDS, flatten_pinyin = False, indent_str = "!!!!")
 #   canto_dict.show_search("艦")
