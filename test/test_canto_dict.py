@@ -13,7 +13,8 @@ def verify_search(
     canto_dict: CantoDict, dict_search_test_case: DictSearchTestCase
 ) -> None:
     """Helper method that verifies a CantoDict search case."""
-    assert canto_dict.search_dict(dict_search_test_case.search_expr) == dict_search_test_case.search_result
+    assert canto_dict.search_dict(dict_search_test_case.search_expr,
+                                  **dict_search_test_case.search_options) == dict_search_test_case.search_result
 
 def test_search_dict(
     canto_dict: CantoDict,

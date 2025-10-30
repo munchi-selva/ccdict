@@ -5,6 +5,7 @@
 
 import re
 import sqlite3
+from pprint import pprint
 
 def regexp(pattern: str, field: str) -> bool:
     """
@@ -42,8 +43,7 @@ def table_exists(sqlcur: sqlite3.Cursor, table_name: str) -> int:
 
 
 def row_count(sqlcur: sqlite3.Cursor, table_name: str) -> int:
-    """
-    Returns the row count for a given table.
+    """Returns the row count for a given table.
 
     Args:
         sqlcur:     Cursor instance for running queries
@@ -57,8 +57,7 @@ def row_count(sqlcur: sqlite3.Cursor, table_name: str) -> int:
 
 
 def show_query(sqlcur: sqlite3.Cursor, query: str, as_dict: bool = False) -> None:
-    """
-    Shows the results of a given query.
+    """Shows the results of a given query.
 
     Args:
         sqlcur:     Cursor instance for running queries
@@ -68,6 +67,7 @@ def show_query(sqlcur: sqlite3.Cursor, query: str, as_dict: bool = False) -> Non
     Returns:
         Nothing
     """
+    pprint(f"{query}")
     if as_dict:
         pprint([dict(row) for row in sqlcur.execute(query)])
     else:

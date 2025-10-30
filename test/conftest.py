@@ -4,7 +4,7 @@
 import os
 import pytest
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Union
 
@@ -22,12 +22,13 @@ class DictSearchTestCase:
     """Defines a CantoDict search test case as a search expression + result."""
     search_expr: Union[str, list[DictSearchTerm]]
     search_result: list[dict]
+    search_options: dict = field(default_factory=dict)
 
 @pytest.fixture(scope="session")
 def canto_dict(tmp_path_factory: pytest.TempPathFactory) -> CantoDict:
     dict_data_path = tmp_path_factory.mktemp("dict_data")
-    #yield CantoDict(dict_db_filename = str(dict_data_path / "ccdict.db"))
-    yield CantoDict(dict_db_filename = DICT_DB_FILENAME)
+    yield CantoDict(dict_db_filename = str(dict_data_path / "ccdict.db"))
+    #yield CantoDict(dict_db_filename = DICT_DB_FILENAME)
 
 @pytest.fixture
 def cedict_symbols_in_chinese() -> ExpectedParseOutput:
@@ -216,7 +217,7 @@ def multi_cj_search_test_cases() -> list[DictSearchTestCase]:
                      {
                          DictField.DF_TRAD.value: "艦",
                          DictField.DF_SIMP.value: "舰",
-                         DictField.DF_PINYIN.value: "jian4",
+                         DictField.DF_PINYIN.value: ["jian4"],
                          DictField.DF_JYUTPING.value: ["laam6"],
                          DictField.DF_ENGLISH.value: ["naval vessel", "warship"],
                          DictField.DF_CJCODE.value: ["hysit", "hysmt"]
@@ -235,7 +236,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "吼",
                     DictField.DF_SIMP.value: "吼",
-                    DictField.DF_PINYIN.value: "hou3",
+                    DictField.DF_PINYIN.value: ["hou3"],
                     DictField.DF_JYUTPING.value: ["haau1", "hau2", "hau3"],
                     DictField.DF_ENGLISH.value: ["bellow of rage", "roar or howl of an animal"],
                     DictField.DF_CJCODE.value: ["rndu"]
@@ -243,7 +244,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "吼",
                     DictField.DF_SIMP.value: "吼",
-                    DictField.DF_PINYIN.value: "hou3",
+                    DictField.DF_PINYIN.value: ["hou3"],
                     DictField.DF_JYUTPING.value: ["haau1"],
                     DictField.DF_ENGLISH.value: ["(verb) watch closely on something because of great interest",
                                                  "to howl", "to roar", "to shriek"],
@@ -252,7 +253,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "吼",
                     DictField.DF_SIMP.value: "吼",
-                    DictField.DF_PINYIN.value: "hou3",
+                    DictField.DF_PINYIN.value: ["hou3"],
                     DictField.DF_JYUTPING.value: ["hau1", "hau4"],
                     DictField.DF_ENGLISH.value: ["to keep an eye on", "to long for",
                                                  "to lust after", "to target",
@@ -267,7 +268,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "樂",
                     DictField.DF_SIMP.value: "乐",
-                    DictField.DF_PINYIN.value: "le4",
+                    DictField.DF_PINYIN.value: ["le4"],
                     DictField.DF_JYUTPING.value: ["lok3"],
                     DictField.DF_ENGLISH.value: ["a place name", "a surname"],
                     DictField.DF_CJCODE.value: ["vid"]
@@ -276,7 +277,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                     DictField.DF_TRAD.value: "樂",
                     DictField.DF_SIMP.value: "乐",
                     DictField.DF_JYUTPING.value: ["lok6"],
-                    DictField.DF_PINYIN.value: "le4,yue4",
+                    DictField.DF_PINYIN.value: ["le4", "yue4"],
                     DictField.DF_ENGLISH.value: ["cheerful",
                                                  "enjoyable",
                                                  "happy",
@@ -289,7 +290,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "樂",
                     DictField.DF_SIMP.value: "乐",
-                    DictField.DF_PINYIN.value: "le4",
+                    DictField.DF_PINYIN.value: ["le4"],
                     DictField.DF_JYUTPING.value: ["ngaau6"],
                     DictField.DF_ENGLISH.value: ["to love, to be fond of, to delight in"],
                     DictField.DF_CJCODE.value: ["vid"]
@@ -297,7 +298,7 @@ def multi_jyutping_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD.value: "樂",
                     DictField.DF_SIMP.value: "乐",
-                    DictField.DF_PINYIN.value: "le4,yue4",
+                    DictField.DF_PINYIN.value: ["le4", "yue4"],
                     DictField.DF_JYUTPING.value: ["ngok6", "lok6"],
                     DictField.DF_ENGLISH.value: ["music"],
                     DictField.DF_CJCODE.value: ["vid"]
@@ -318,7 +319,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "元",
                     DictField.DF_SIMP: "元",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["a surname", "surname Yuan"],
                     DictField.DF_CJCODE: ["mmu"]
@@ -326,7 +327,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "原",
                     DictField.DF_SIMP: "原",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["(Japanese surname) Hara", "surname Yuan"],
                     DictField.DF_CJCODE: ["mhaf"]
@@ -334,7 +335,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "園",
                     DictField.DF_SIMP: "园",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["surname Yuan"],
                     DictField.DF_CJCODE: ["wgrv"]
@@ -342,7 +343,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "完",
                     DictField.DF_SIMP: "完",
-                    DictField.DF_PINYIN: "wan2",
+                    DictField.DF_PINYIN: ["wan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["a surname"],
                     DictField.DF_CJCODE: ["jmmu"]
@@ -350,7 +351,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "小淵",
                     DictField.DF_SIMP: "小渊",
-                    DictField.DF_PINYIN: "xiao3 yuan1",
+                    DictField.DF_PINYIN: ["xiao3 yuan1"],
                     DictField.DF_JYUTPING: ["siu2 jyun1"],
                     DictField.DF_ENGLISH: ["Obuchi (Japanese surname)"],
                     DictField.DF_CJCODE: []
@@ -358,7 +359,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "淵",
                     DictField.DF_SIMP: "渊",
-                    DictField.DF_PINYIN: "yuan1",
+                    DictField.DF_PINYIN: ["yuan1"],
                     DictField.DF_JYUTPING: ["jyun1"],
                     DictField.DF_ENGLISH: ["a surname"],
                     DictField.DF_CJCODE: ["elxl"]
@@ -366,7 +367,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "源",
                     DictField.DF_SIMP: "源",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["surname"],
                     DictField.DF_CJCODE: ["emhf"]
@@ -374,7 +375,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "爰",
                     DictField.DF_SIMP: "爰",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["and then a surname"],
                     DictField.DF_CJCODE: ["bmke"]
@@ -382,7 +383,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "玄",
                     DictField.DF_SIMP: "玄",
-                    DictField.DF_PINYIN: "xuan2",
+                    DictField.DF_PINYIN: ["xuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["a surname"],
                     DictField.DF_CJCODE: ["yvi"]
@@ -390,7 +391,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "苑",
                     DictField.DF_SIMP: "苑",
-                    DictField.DF_PINYIN: "yuan4",
+                    DictField.DF_PINYIN: ["yuan4"],
                     DictField.DF_JYUTPING: ["jyun2"],
                     DictField.DF_ENGLISH: ["a surname", "surname Yuan"],
                     DictField.DF_CJCODE: ["tniu"]
@@ -398,7 +399,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "蜎",
                     DictField.DF_SIMP: "蜎",
-                    DictField.DF_PINYIN: "yuan1",
+                    DictField.DF_PINYIN: ["yuan1"],
                     DictField.DF_JYUTPING: ["jyun1"],
                     DictField.DF_ENGLISH: ["surname Yuan"],
                     DictField.DF_CJCODE: ["lirb"]
@@ -406,7 +407,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "袁",
                     DictField.DF_SIMP: "袁",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["a surname"],
                     DictField.DF_CJCODE: ["grhv"]
@@ -414,7 +415,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "軒轅",
                     DictField.DF_SIMP: "轩辕",
-                    DictField.DF_PINYIN: "xuan1 yuan2",
+                    DictField.DF_PINYIN: ["xuan1 yuan2"],
                     DictField.DF_JYUTPING: ["hin1 jyun4"],
                     DictField.DF_ENGLISH: ["two-character surname Xuanyuan"],
                     DictField.DF_CJCODE: []
@@ -422,7 +423,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "轅",
                     DictField.DF_SIMP: "辕",
-                    DictField.DF_PINYIN: "yuan2",
+                    DictField.DF_PINYIN: ["yuan2"],
                     DictField.DF_JYUTPING: ["jyun4"],
                     DictField.DF_ENGLISH: ["a surname"],
                     DictField.DF_CJCODE: ["jjgrv"]
@@ -430,7 +431,7 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
                 {
                     DictField.DF_TRAD: "阮",
                     DictField.DF_SIMP: "阮",
-                    DictField.DF_PINYIN: "ruan3",
+                    DictField.DF_PINYIN: ["ruan3"],
                     DictField.DF_JYUTPING: ["jyun2", "jyun5"],
                     DictField.DF_ENGLISH: ["surname Ruan"],
                     DictField.DF_CJCODE: ["nlmmu"]
@@ -440,13 +441,148 @@ def composite_search_test_cases() -> list[DictSearchTestCase]:
     ]
 
 @pytest.fixture
+def no_jyutping_search_test_cases() -> list[DictSearchTestCase]:
+    """Yields search test cases with no Jyutping transcriptions."""
+    yield [
+        DictSearchTestCase(
+            "骭",
+            [
+                {
+                    DictField.DF_TRAD: "骭",
+                    DictField.DF_SIMP: "骭",
+                    DictField.DF_JYUTPING: [],
+                    DictField.DF_PINYIN: ["gan4"],
+                    DictField.DF_ENGLISH: ["shinbone"],
+                    DictField.DF_CJCODE: ["bbmj"],
+                }
+            ]
+        ),
+        DictSearchTestCase(
+            "鬆口",
+            [
+                {
+                    DictField.DF_TRAD: "鬆口",
+                    DictField.DF_SIMP: "松口",
+                    DictField.DF_JYUTPING: [],
+                    DictField.DF_PINYIN: ["song1 kou3"],
+                    DictField.DF_ENGLISH: ["(fig.) to relent", "to let go of sth held in one's mouth", "to yield"],
+                    DictField.DF_CJCODE: [],
+                }
+            ]
+        )
+    ]
+
+@pytest.fixture
+def no_pinyin_search_test_cases() -> list[DictSearchTestCase]:
+    """Yields search test cases with no Pinyin transcriptions."""
+    yield [
+        DictSearchTestCase(
+            "𥄫",
+            [
+                {
+                    DictField.DF_TRAD: "𥄫",
+                    DictField.DF_SIMP: "𥄫",
+                    DictField.DF_JYUTPING: ["gap6"],
+                    DictField.DF_PINYIN: [],
+                    DictField.DF_ENGLISH: ["(Cant.) to stare", "snooping", "to keep an eye on", "to monitor or track", "to peek", "to peep at", "to watch closely"],
+                    DictField.DF_CJCODE: ["bunhe"],
+                }
+            ]
+        )
+    ]
+
+@pytest.fixture
+def unflattened_search_test_cases() -> list[DictSearchTestCase]:
+    """Yields search test cases when the Pinyin field is not flattened."""
+    yield [
+        DictSearchTestCase(
+            "樂",
+            [
+                {
+                    DictField.DF_TRAD: "樂",
+                    DictField.DF_SIMP: "乐",
+                    DictField.DF_JYUTPING: ["lok3"],
+                    DictField.DF_PINYIN: ["le4"],
+                    DictField.DF_ENGLISH: ["a place name", "a surname"],
+                    DictField.DF_CJCODE: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD: "樂",
+                    DictField.DF_SIMP: "乐",
+                    DictField.DF_JYUTPING: ["lok6"],
+                    DictField.DF_PINYIN: ["le4"],
+                    DictField.DF_ENGLISH: ["cheerful", "enjoyable", "happy", "musical; music", "surname Le", "to laugh"],
+                    DictField.DF_CJCODE: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD: "樂",
+                    DictField.DF_SIMP: "乐",
+                    DictField.DF_JYUTPING: ["lok6"],
+                    DictField.DF_PINYIN: ["yue4"],
+                    DictField.DF_ENGLISH: ["surname Yue"],
+                    DictField.DF_CJCODE: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD: "樂",
+                    DictField.DF_SIMP: "乐",
+                    DictField.DF_JYUTPING: ["ngaau6"],
+                    DictField.DF_PINYIN: ["le4"],
+                    DictField.DF_ENGLISH: ["to love, to be fond of, to delight in"],
+                    DictField.DF_CJCODE: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD: "樂",
+                    DictField.DF_SIMP: "乐",
+                    DictField.DF_JYUTPING: ["ngok6", "lok6"],
+                    DictField.DF_PINYIN: ["le4", "yue4"],
+                    DictField.DF_ENGLISH: ["music"],
+                    DictField.DF_CJCODE: ["vid"]
+                }
+            ],
+            {
+                "flatten_pinyin" : False
+            }
+        ),
+        DictSearchTestCase(
+            "服",
+            [
+                {
+                    DictField.DF_TRAD: "服",
+                    DictField.DF_SIMP: "服",
+                    DictField.DF_JYUTPING: ["fuk6"],
+                    DictField.DF_PINYIN: ["fu2"],
+                    DictField.DF_ENGLISH: ["clothes", "dress", "garment", "mourning clothes", "to acclimatize", "to admire", "to be convinced (by an argument)", "to convince", "to obey", "to serve (in the military, a prison sentence etc)", "to take (medicine)", "to wear mourning clothes"],
+                    DictField.DF_CJCODE: ["bsle"],
+                },
+                {
+                    DictField.DF_TRAD: "服",
+                    DictField.DF_SIMP: "服",
+                    DictField.DF_JYUTPING: ["fuk6"],
+                    DictField.DF_PINYIN: ["fu4"],
+                    DictField.DF_ENGLISH: ["Taiwan pr. [fu2]", "classifier for medicine: dose"],
+                    DictField.DF_CJCODE: ["bsle"],
+                }
+            ],
+            {
+                "flatten_pinyin" : False
+            }
+        )
+    ]
+
+@pytest.fixture
 def canto_dict_search_test_cases(
     multi_cj_search_test_cases: list[DictSearchTestCase],
     multi_jyutping_search_test_cases: list[DictSearchTestCase],
-    composite_search_test_cases: list[DictSearchTestCase]
+    composite_search_test_cases: list[DictSearchTestCase],
+    no_jyutping_search_test_cases: list[DictSearchTestCase],
+    no_pinyin_search_test_cases: list[DictSearchTestCase],
+    unflattened_search_test_cases: list[DictSearchTestCase]
 ) -> list[DictSearchTestCase]:
     yield (
         multi_cj_search_test_cases +
         multi_jyutping_search_test_cases +
-        composite_search_test_cases
+        composite_search_test_cases +
+        no_jyutping_search_test_cases +
+        no_pinyin_search_test_cases +
+        unflattened_search_test_cases
     )

@@ -50,20 +50,6 @@ CJV5_FILE           = "Cangjie_Version_5_Encodings_[ibus].txt"
 DICT_DB_DIR      = os.path.dirname(os.path.realpath(__file__))
 DICT_DB_FILENAME = f"{DICT_DB_DIR}/ccdict.db"
 
-###############################################################################
-# Dictionary entry field names, used as SQL table column names, etc.
-###############################################################################
-# TODO: convert this to a StrEnum
-
-DE_FLD_TRAD     = "traditional"
-DE_FLD_SIMP     = "simplified"
-DE_FLD_PINYIN   = "pinyin"
-DE_FLD_JYUTPING = "jyutping"
-DE_FLD_ENGLISH  = "english"
-DE_FLD_COMMENT  = "comment"
-DE_FLD_CJCODE   = "cjcode"
-DE_FLD_CJCHAR   = "character"
-
 HAN_UNICODE_RANGES: list[range] = [range(0x4E00, 0x9FFF+1),     # CJK Unified Ideographs Common
                                    range(0x3400, 0x4DBF+1),     # CJK Unified Ideographs Extension A Rare
                                    range(0x20000, 0x2A6DF+1),   # CJK Unified Ideographs Extension B Rare, historic
@@ -232,8 +218,9 @@ class CantoDict(object):
         # Add these records to the core table (if they aren't already there).
         #
         cedict_join_query = f"CREATE TABLE cedict_joined AS \
-                              SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, \
-                                     cc.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                              SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, \
+                                     c.{DictField.DF_PINYIN}, cc.{DictField.DF_JYUTPING}, \
+                                     c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
                               FROM   cc_cedict c JOIN cc_cedict_canto cc \
                                      ON  c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
                                          c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
@@ -241,7 +228,9 @@ class CantoDict(object):
         db_cur.execute(cedict_join_query)
 
         add_join_query = f"INSERT INTO cc_canto \
-                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_ENGLISH} \
+                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, \
+                                  c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
+                                  c.{DictField.DF_ENGLISH}, c.{DictField.DF_ENGLISH} \
                            FROM   cedict_joined c LEFT JOIN cc_canto cc \
                                   ON c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
                                      c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
@@ -257,16 +246,20 @@ class CantoDict(object):
         # add them to the core table
         #
         cedict_orphans_query = f"CREATE TABLE cedict_orphans AS \
-                                 SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                                 SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, \
+                                        c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
+                                        c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
                                  FROM   cc_cedict c LEFT JOIN cc_cedict_canto cc \
                                  ON     c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
                                         c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
                                         c.{DictField.DF_PINYIN} = cc.{DictField.DF_PINYIN} \
-                                 WHERE  cc.{DictField.DF_ENGLISH} IS NULL"
+                                 WHERE  cc.{DictField.DF_JYUTPING} IS NULL"
         db_cur.execute(cedict_orphans_query)
 
         add_cedict_orphans_query = f"INSERT INTO cc_canto \
-                                     SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
+                                     SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, \
+                                            c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
+                                            c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
                                      FROM   cedict_orphans c LEFT JOIN cc_canto cc \
                                             ON c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
                                                c.{DictField.DF_SIMP} = cc.{DictField.DF_SIMP} AND \
@@ -281,7 +274,8 @@ class CantoDict(object):
         # Identify CC-CEDICT-Canto orphans and add them to the core table
         #
         cedict_canto_orphans_query = f"CREATE TABLE cedict_canto_orphans AS \
-                                       SELECT cc.{DictField.DF_TRAD}, cc.{DictField.DF_SIMP}, cc.{DictField.DF_PINYIN}, cc.{DictField.DF_JYUTPING}, \
+                                       SELECT cc.{DictField.DF_TRAD}, cc.{DictField.DF_SIMP}, \
+                                              cc.{DictField.DF_PINYIN}, cc.{DictField.DF_JYUTPING}, \
                                               cc.{DictField.DF_ENGLISH}, cc.{DictField.DF_COMMENT} \
                                        FROM   cc_cedict_canto cc LEFT JOIN cc_cedict c \
                                        ON     c.{DictField.DF_TRAD} = cc.{DictField.DF_TRAD} AND \
@@ -291,7 +285,8 @@ class CantoDict(object):
         db_cur.execute(cedict_canto_orphans_query)
 
         add_cedict_canto_orphans_query = f"INSERT INTO cc_canto \
-                                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
+                                           SELECT c.{DictField.DF_TRAD}, c.{DictField.DF_SIMP}, \
+                                                  c.{DictField.DF_PINYIN}, c.{DictField.DF_JYUTPING}, \
                                                   c.{DictField.DF_ENGLISH}, c.{DictField.DF_COMMENT} \
                                            FROM   cedict_canto_orphans c LEFT JOIN \
                                                   cc_canto cc \
@@ -424,7 +419,7 @@ class CantoDict(object):
         Returns True if a dictionary entry can have multiple entries for the
         specified field.
         """
-        return field in [DictField.DF_JYUTPING, DictField.DF_ENGLISH, DictField.DF_CJCODE]
+        return field in [DictField.DF_JYUTPING, DictField.DF_PINYIN, DictField.DF_ENGLISH, DictField.DF_CJCODE]
     ###########################################################################
 
 
@@ -528,48 +523,70 @@ class CantoDict(object):
         canto_query = str()
         if flatten_pinyin:
             canto_query = f"""
-                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
-                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE}, {DictField.DF_SIMP})
+                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_SIMP},
+                                             {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
+                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE})
                           AS
                               (SELECT {DictField.DF_TRAD},
+                                      {DictField.DF_SIMP},
                                       regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
-                                      group_concat(DISTINCT({DictField.DF_PINYIN})),
+                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_PINYIN})), 'null,?', ''),
                                       {DictField.DF_ENGLISH},
-                                      cj_dict.{DictField.DF_CJCODE},
-                                      {DictField.DF_SIMP}
+                                      cj_dict.{DictField.DF_CJCODE}
                                FROM   cc_canto LEFT JOIN
-                                      cj_dict ON cc_canto.{DictField.DF_TRAD} = cj_dict.{DictField.DF_CJCHAR}
+                                      cj_dict ON
+                                        cc_canto.{DictField.DF_TRAD} =
+                                        cj_dict.{DictField.DF_CJCHAR}
                                WHERE  {where_clause}
-                               GROUP BY {DictField.DF_TRAD}, {DictField.DF_ENGLISH}, {DictField.DF_CJCODE}, {DictField.DF_SIMP})
-                          SELECT {DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_SIMP},
-                                 group_concat(DISTINCT({DictField.DF_PINYIN})) AS {DictField.DF_PINYIN},
+                               GROUP BY {DictField.DF_TRAD},
+                                        {DictField.DF_SIMP},
+                                        {DictField.DF_ENGLISH},
+                                        {DictField.DF_CJCODE})
+                          SELECT {DictField.DF_TRAD},
+                                 {DictField.DF_SIMP},
+                                 {DictField.DF_JYUTPING},
+                                 regexp_replace(group_concat(DISTINCT({DictField.DF_PINYIN})),'\],\[', ',') AS {DictField.DF_PINYIN},
                                  regexp_replace(json_group_array(DISTINCT({DictField.DF_ENGLISH})), 'null,?', '') AS {DictField.DF_ENGLISH},
                                  regexp_replace(json_group_array(DISTINCT({DictField.DF_CJCODE})), 'null,?', '') AS {DictField.DF_CJCODE}
                           FROM   matching_defs
-                          GROUP BY {DictField.DF_TRAD}, {DictField.DF_JYUTPING}, {DictField.DF_SIMP}
+                          GROUP BY {DictField.DF_TRAD},
+                                   {DictField.DF_SIMP},
+                                   {DictField.DF_JYUTPING}
                           """
         else:
-            canto_query = f"""
-                          WITH matching_defs({DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_PINYIN},
-                                             {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP})
+             canto_query = f"""
+                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_SIMP},
+                                             {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
+                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE})
                           AS
-                              (SELECT {DE_FLD_TRAD},
-                                      regexp_replace(json_group_array(DISTINCT({DE_FLD_JYUTPING})), 'null,?', ''),
-                                      group_concat(DISTINCT({DE_FLD_PINYIN})),
-                                      {DE_FLD_ENGLISH},
-                                      group_concat(DISTINCT({DE_FLD_CJCODE})),
-                                      {DE_FLD_SIMP}
+                              (SELECT {DictField.DF_TRAD},
+                                      {DictField.DF_SIMP},
+                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
+                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_PINYIN})), 'null,?', ''),
+                                      {DictField.DF_ENGLISH},
+                                      group_concat(DISTINCT({DictField.DF_CJCODE}))
                                FROM   cc_canto LEFT JOIN
-                                      cj_dict ON cc_canto.{DE_FLD_TRAD} = cj_dict.{DE_FLD_CJCHAR}
+                                      cj_dict ON
+                                        cc_canto.{DictField.DF_TRAD} =
+                                        cj_dict.{DictField.DF_CJCHAR}
                                WHERE  {where_clause}
-                               GROUP BY {DE_FLD_TRAD}, {DE_FLD_ENGLISH}, {DE_FLD_CJCODE}, {DE_FLD_SIMP}
-                               ORDER BY {DE_FLD_PINYIN})
-                          SELECT {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP}, {DE_FLD_PINYIN},
-                                 regexp_replace(json_group_array(DISTINCT({DE_FLD_ENGLISH})), 'null,?', '') AS {DE_FLD_ENGLISH},
-                                 regexp_replace(json_group_array(DISTINCT({DE_FLD_CJCODE})), 'null,?', '') AS {DE_FLD_CJCODE}
+                               GROUP BY {DictField.DF_TRAD},
+                                        {DictField.DF_SIMP},
+                                        {DictField.DF_ENGLISH},
+                                        {DictField.DF_CJCODE})
+                          SELECT {DictField.DF_TRAD},
+                                 {DictField.DF_SIMP},
+                                 {DictField.DF_JYUTPING},
+                                 {DictField.DF_PINYIN},
+                                 regexp_replace(json_group_array(DISTINCT({DictField.DF_ENGLISH})), 'null,?', '') AS {DictField.DF_ENGLISH},
+                                 regexp_replace(json_group_array(DISTINCT({DictField.DF_CJCODE})), 'null,?', '') AS {DictField.DF_CJCODE}
                           FROM   matching_defs
-                          GROUP BY {DE_FLD_TRAD}, {DE_FLD_JYUTPING}, {DE_FLD_SIMP}, {DE_FLD_PINYIN}
+                          GROUP BY {DictField.DF_TRAD},
+                                   {DictField.DF_SIMP},
+                                   {DictField.DF_JYUTPING},
+                                   {DictField.DF_PINYIN}
                           """
+#       print(canto_query)
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
     ###########################################################################
@@ -691,12 +708,8 @@ class CantoDict(object):
                     result_strings.append(search_result.get(field, ""))
                 elif field == DictField.DF_JYUTPING:
                     jyutstring = f"[{';'.join(search_result[field])}]"
-
                     if DictField.DF_PINYIN in fields:
-                        # Queries may generate duplicate Pinyin results (although I've yet to see
-                        # this happen)... use a sledgehammer to get rid of them
-                        pinlist = list(set(search_result[DictField.DF_PINYIN].split(",")))
-                        pinstring = "({})".format(";".join(filter(None, pinlist)))
+                        pinstring = f"({';'.join(search_result[DictField.DF_PINYIN])})"
                         jyutstring = f"{jyutstring} {pinstring}"
                     if not compact:
                         jyutstring = f"\t{jyutstring}"
