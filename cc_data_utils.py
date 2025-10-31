@@ -89,7 +89,7 @@ def parse_dict_line(dict_line: str) -> list[CantoDictEntry] | None:
         jyut_transcriptions = [jt.strip().lower() for jt in groups[DictField.DF_JYUTPING].split("/") if jt.strip()] if groups[DictField.DF_JYUTPING] else [None]
         eng_defs = [ed.strip() for ed in groups[DictField.DF_ENGLISH].split("/") if ed.strip()]  if groups[DictField.DF_ENGLISH] else [None]
         # What effect would the following have on the SQL inserts?
-        # eng_defs = groups[DE_FLD_ENGLISH].split("/") if groups[DE_FLD_ENGLISH] else [""]
+        # eng_defs = groups[DictField.DF_ENGLISH].split("/") if groups[DictField.DF_ENGLISH] else [""]
 
         return [(groups[DictField.DF_TRAD], groups[DictField.DF_SIMP],
                  groups[DictField.DF_PINYIN].lower() if groups[DictField.DF_PINYIN] else None,

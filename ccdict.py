@@ -500,8 +500,8 @@ class CantoDict(object):
                           **kwargs):
         # type (List[DictSearchTerm], Bool) -> List[Dict]
         """
-        Retrieves dictionary entries matching a search expression, which is
-        formatted as a list of dictionary search terms
+        Retrieves dictionary entries matching a search expression formatted as
+        a list of dictionary search terms
 
         :param  search_expr:    A list of search terms
         :optional/keyword arguments
@@ -517,31 +517,46 @@ class CantoDict(object):
         where_values = tuple([search_term.search_value for search_term in search_expr])
 
         #
-        # Build a two-stage query that groups records matching the search terms
-        # according to Jyutping and English definition
+        # Build a query in two stages to return matching records grouped by
+        # Chinese and English definitions, Cangjie code and selected
+        # transcriptions
         #
-        canto_query = str()
+
+        #
+        # Use a Common Table Expression to filter cc_canto entries and match
+        # them with Cangjie data, grouping by Chinese and English definitions
+        # plus Cangjie code.
+        #
+        # Acrobatics to handle transcription fields:
+        #   - DISTINCT to eliminate duplicates
+        #   - json_group_array() to aggregate results into an array of strings
+        #   - regexp_replace() to eliminate null results
+        #
+        canto_cj = f"""
+                   WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_SIMP},
+                                      {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
+                                      {DictField.DF_ENGLISH}, {DictField.DF_CJCODE})
+                   AS
+                   (
+                       SELECT {DictField.DF_TRAD},
+                              {DictField.DF_SIMP},
+                              regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
+                              regexp_replace(json_group_array(DISTINCT({DictField.DF_PINYIN})), 'null,?', ''),
+                              {DictField.DF_ENGLISH},
+                              cj_dict.{DictField.DF_CJCODE}
+                       FROM   cc_canto LEFT JOIN
+                              cj_dict ON
+                              cc_canto.{DictField.DF_TRAD} = cj_dict.{DictField.DF_CJCHAR}
+                       WHERE  {where_clause}
+                       GROUP BY {DictField.DF_TRAD},
+                                {DictField.DF_SIMP},
+                                {DictField.DF_ENGLISH},
+                                {DictField.DF_CJCODE}
+                    )
+                    """
+
         if flatten_pinyin:
-            canto_query = f"""
-                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_SIMP},
-                                             {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
-                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE})
-                          AS
-                              (SELECT {DictField.DF_TRAD},
-                                      {DictField.DF_SIMP},
-                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
-                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_PINYIN})), 'null,?', ''),
-                                      {DictField.DF_ENGLISH},
-                                      cj_dict.{DictField.DF_CJCODE}
-                               FROM   cc_canto LEFT JOIN
-                                      cj_dict ON
-                                        cc_canto.{DictField.DF_TRAD} =
-                                        cj_dict.{DictField.DF_CJCHAR}
-                               WHERE  {where_clause}
-                               GROUP BY {DictField.DF_TRAD},
-                                        {DictField.DF_SIMP},
-                                        {DictField.DF_ENGLISH},
-                                        {DictField.DF_CJCODE})
+            canto_group = f"""
                           SELECT {DictField.DF_TRAD},
                                  {DictField.DF_SIMP},
                                  {DictField.DF_JYUTPING},
@@ -554,26 +569,7 @@ class CantoDict(object):
                                    {DictField.DF_JYUTPING}
                           """
         else:
-             canto_query = f"""
-                          WITH matching_defs({DictField.DF_TRAD}, {DictField.DF_SIMP},
-                                             {DictField.DF_JYUTPING}, {DictField.DF_PINYIN},
-                                             {DictField.DF_ENGLISH}, {DictField.DF_CJCODE})
-                          AS
-                              (SELECT {DictField.DF_TRAD},
-                                      {DictField.DF_SIMP},
-                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_JYUTPING})), 'null,?', ''),
-                                      regexp_replace(json_group_array(DISTINCT({DictField.DF_PINYIN})), 'null,?', ''),
-                                      {DictField.DF_ENGLISH},
-                                      group_concat(DISTINCT({DictField.DF_CJCODE}))
-                               FROM   cc_canto LEFT JOIN
-                                      cj_dict ON
-                                        cc_canto.{DictField.DF_TRAD} =
-                                        cj_dict.{DictField.DF_CJCHAR}
-                               WHERE  {where_clause}
-                               GROUP BY {DictField.DF_TRAD},
-                                        {DictField.DF_SIMP},
-                                        {DictField.DF_ENGLISH},
-                                        {DictField.DF_CJCODE})
+            canto_group = f"""
                           SELECT {DictField.DF_TRAD},
                                  {DictField.DF_SIMP},
                                  {DictField.DF_JYUTPING},
@@ -586,7 +582,7 @@ class CantoDict(object):
                                    {DictField.DF_JYUTPING},
                                    {DictField.DF_PINYIN}
                           """
-#       print(canto_query)
+        canto_query = canto_cj + canto_group
         self.db_cur.execute(canto_query, where_values)
         return [dict(row) for row in self.db_cur.fetchall()]
     ###########################################################################
