@@ -570,13 +570,66 @@ def unflattened_search_test_cases() -> list[DictSearchTestCase]:
     ]
 
 @pytest.fixture
+def simplified_search_test_cases() -> list[DictSearchTestCase]:
+    """Yields search test cases when the search term is simplified Chinese."""
+    yield [
+        DictSearchTestCase(
+            "乐",
+            [
+                {
+                    DictField.DF_TRAD.value: "樂",
+                    DictField.DF_SIMP.value: "乐",
+                    DictField.DF_PINYIN.value: ["le4"],
+                    DictField.DF_JYUTPING.value: ["lok3"],
+                    DictField.DF_ENGLISH.value: ["a place name", "a surname"],
+                    DictField.DF_CJCODE.value: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD.value: "樂",
+                    DictField.DF_SIMP.value: "乐",
+                    DictField.DF_JYUTPING.value: ["lok6"],
+                    DictField.DF_PINYIN.value: ["le4", "yue4"],
+                    DictField.DF_ENGLISH.value: ["cheerful",
+                                                 "enjoyable",
+                                                 "happy",
+                                                 "musical; music",
+                                                 "surname Le",
+                                                 "surname Yue",
+                                                 "to laugh"],
+                   DictField.DF_CJCODE.value: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD.value: "樂",
+                    DictField.DF_SIMP.value: "乐",
+                    DictField.DF_PINYIN.value: ["le4"],
+                    DictField.DF_JYUTPING.value: ["ngaau6"],
+                    DictField.DF_ENGLISH.value: ["to love, to be fond of, to delight in"],
+                    DictField.DF_CJCODE.value: ["vid"]
+                },
+                {
+                    DictField.DF_TRAD.value: "樂",
+                    DictField.DF_SIMP.value: "乐",
+                    DictField.DF_PINYIN.value: ["le4", "yue4"],
+                    DictField.DF_JYUTPING.value: ["ngok6", "lok6"],
+                    DictField.DF_ENGLISH.value: ["music"],
+                    DictField.DF_CJCODE.value: ["vid"]
+                }
+            ],
+            {
+                "try_all_fields": True,
+            }
+        )
+    ]
+
+@pytest.fixture
 def canto_dict_search_test_cases(
     multi_cj_search_test_cases: list[DictSearchTestCase],
     multi_jyutping_search_test_cases: list[DictSearchTestCase],
     composite_search_test_cases: list[DictSearchTestCase],
     no_jyutping_search_test_cases: list[DictSearchTestCase],
     no_pinyin_search_test_cases: list[DictSearchTestCase],
-    unflattened_search_test_cases: list[DictSearchTestCase]
+    unflattened_search_test_cases: list[DictSearchTestCase],
+    simplified_search_test_cases: list[DictSearchTestCase]
 ) -> list[DictSearchTestCase]:
     yield (
         multi_cj_search_test_cases +
@@ -584,5 +637,6 @@ def canto_dict_search_test_cases(
         composite_search_test_cases +
         no_jyutping_search_test_cases +
         no_pinyin_search_test_cases +
-        unflattened_search_test_cases
+        unflattened_search_test_cases +
+        simplified_search_test_cases
     )

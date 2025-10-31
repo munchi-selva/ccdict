@@ -18,13 +18,6 @@ from typing import Optional
 from ccdict.canto_dict_types import DictField
 
 #
-# Next steps:
-# 1. Write unit tests for ccdict.db creation
-# 2. Change the return type of the parsing functions
-# 3. Retest
-#
-
-#
 # CC* dictionary file formats
 #
 # CC-CEDICT entry format (https://CC-CEDICT.org/wiki/format:syntax)
