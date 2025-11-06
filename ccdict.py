@@ -289,7 +289,7 @@ class CantoDict(object):
         jyutping_index_name = "cc_canto_jyutping"
         db_cur.execute(f"CREATE INDEX {jyutping_index_name} ON cc_canto({DictField.DF_JYUTPING})")
 
-        # Needed: free text index for DF_ENGLISH
+        # TODO: Free text index for DictField.DF_ENGLISH
 
         if save_changes:
             self.save_dict()
@@ -297,6 +297,7 @@ class CantoDict(object):
 
 
     ###########################################################################
+    # TODO: Refactor this into separate file parsing, SQL table loading functions,
     def load_canjie_defs(self, force_reload = False, save_changes = True):
         """
         Loads Cangjie definitions into the database as required.
@@ -377,6 +378,10 @@ class CantoDict(object):
                     cj_ins_query = f"INSERT INTO {cj_dict_table_name}({DictField.DF_CJCHAR}, {DictField.DF_CJCODE}) VALUES(?, ?)"
                     self.db_cur.execute(cj_ins_query, (character, cj_code))
                     cj_line = cj_file.readline()
+
+            print("Creating indexes")
+            char_index_name = "cj_character"
+            db_cur.execute(f"CREATE INDEX {char_index_name} ON {cj_dict_table_name}({DictField.DF_CJCHAR})")
 
         if save_changes:
             self.save_dict()
